@@ -5,7 +5,7 @@
   "author": "louisthecat86",
   "license": "MIT",
   "type": "module",
-  "main": "electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "build:web": "vite build --config vite.config.electron.ts",
     "start": "npm run build:web && electron .",
