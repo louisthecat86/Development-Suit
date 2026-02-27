@@ -1,0 +1,69 @@
+name: Build Desktop App
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:  # Manueller Start über GitHub UI möglich
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build React SPA
+        run: npx vite build --config vite.config.electron.ts
+
+      - name: Build Windows Portable EXE
+        run: npx electron-builder --win portable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: QUID-Rechner-Windows-Portable
+          path: release/*.exe
+          retention-days: 90
+
+  build-windows-installer:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build React SPA
+        run: npx vite build --config vite.config.electron.ts
+
+      - name: Build Windows Installer
+        run: npx electron-builder --win nsis
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: QUID-Rechner-Windows-Setup
+          path: release/*.exe
+          retention-days: 90
