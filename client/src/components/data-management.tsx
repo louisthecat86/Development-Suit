@@ -1,3 +1,4 @@
+import { getData, setData } from "@/lib/electron-storage";
 import React, { useRef, useState } from "react";
 import { Download, Upload, Database, Settings, FileSpreadsheet, Lock, Unlock, Search, ChefHat, Archive, FolderOpen, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ export function IngredientPicker({ onSelect }: { onSelect: (ing: LibraryIngredie
 
   React.useEffect(() => {
     const load = () => {
-      const storedIng = localStorage.getItem("quid-ingredient-db-clean");
+      const storedIng = getData("quid-ingredient-db-clean");
       if (storedIng) {
         try {
           const parsed = JSON.parse(storedIng);
@@ -187,7 +188,7 @@ export function DataManagement() {
 
   const getProjects = () => {
       try {
-          const data = localStorage.getItem("quid-projects-db-clean");
+          const data = getData("quid-projects-db-clean");
           return data ? JSON.parse(data) : [];
       } catch (e) { return []; }
   };
@@ -226,10 +227,10 @@ export function DataManagement() {
       zip.file("projects.json", JSON.stringify(leanProjects, null, 2));
 
       // 2. Global Ingredients & Recipes
-      const ingredientsData = localStorage.getItem("quid-ingredient-db-clean");
+      const ingredientsData = JSON.stringify(getData("quid-ingredient-db-clean") || []);
       if (ingredientsData) zip.file("ingredients.json", ingredientsData);
 
-      const recipesData = localStorage.getItem("quid-recipe-db-clean");
+      const recipesData = JSON.stringify(getData("quid-recipe-db-clean") || []);
       if (recipesData) zip.file("recipes.json", recipesData);
 
       // 3. Readable Folder Structure (Customers -> Projects)
@@ -356,7 +357,7 @@ export function DataManagement() {
                   const projectsFile = zip.file("projects.json");
                   if (projectsFile) {
                       const content = await projectsFile.async("string");
-                      localStorage.setItem("quid-projects-db-clean", content);
+                      setData("quid-projects-db-clean", JSON.parse(content));
                       restoredCount++;
                   }
 
@@ -364,7 +365,7 @@ export function DataManagement() {
                   const ingredientsFile = zip.file("ingredients.json");
                   if (ingredientsFile) {
                       const content = await ingredientsFile.async("string");
-                      localStorage.setItem("quid-ingredient-db-clean", content);
+                      setData("quid-ingredient-db-clean", JSON.parse(content));
                       window.dispatchEvent(new Event("storage-update"));
                       restoredCount++;
                   }
@@ -373,7 +374,7 @@ export function DataManagement() {
                   const recipesFile = zip.file("recipes.json");
                   if (recipesFile) {
                       const content = await recipesFile.async("string");
-                      localStorage.setItem("quid-recipe-db-clean", content);
+                      setData("quid-recipe-db-clean", JSON.parse(content));
                       window.dispatchEvent(new Event("recipe-storage-update"));
                       restoredCount++;
                   }
@@ -403,21 +404,21 @@ export function DataManagement() {
                       if (json.length > 0 && json[0].isMeat !== undefined) {
                           // Ingredients
                           if(confirm(`Möchten Sie ${json.length} Zutaten importieren?`)) {
-                              localStorage.setItem("quid-ingredient-db-clean", JSON.stringify(json));
+                              setData("quid-ingredient-db-clean", json);
                               window.dispatchEvent(new Event("storage-update"));
                               toast({ title: "Zutaten importiert" });
                           }
                       } else if (json.length > 0 && json[0].cookingLoss !== undefined) {
                           // Recipes
                           if(confirm(`Möchten Sie ${json.length} Rezepte importieren?`)) {
-                              localStorage.setItem("quid-recipe-db-clean", JSON.stringify(json));
+                              setData("quid-recipe-db-clean", json);
                               window.dispatchEvent(new Event("recipe-storage-update"));
                               toast({ title: "Rezepte importiert" });
                           }
                       } else {
                           // Assume Projects
                           if(confirm(`Möchten Sie ${json.length} Projekte importieren?`)) {
-                              localStorage.setItem("quid-projects-db-clean", JSON.stringify(json));
+                              setData("quid-projects-db-clean", json);
                               window.location.reload();
                           }
                       }
@@ -496,7 +497,7 @@ export function DataManagement() {
           
           <DropdownMenuItem onClick={() => {
               if (confirm("WARNUNG: Möchten Sie wirklich ALLE Daten löschen und die App zurücksetzen? Dies kann nicht rückgängig gemacht werden.")) {
-                  localStorage.clear();
+                  setData("quid-projects-db-clean", []); setData("quid-ingredient-db-clean", []); setData("quid-recipe-db-clean", []);
                   window.location.reload();
               }
           }} className="cursor-pointer text-red-600 focus:text-red-600">

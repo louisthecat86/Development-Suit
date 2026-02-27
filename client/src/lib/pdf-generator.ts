@@ -1,3 +1,4 @@
+import { getData } from "./electron-storage";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
@@ -458,9 +459,9 @@ export const generateProjectPDF = (project: Project) => {
              // But this runs on client, so localStorage is available.
              let allFlows = [...FLOW_DIAGRAMS];
              try {
-                 const customFlows = localStorage.getItem("quid-custom-flows");
+                 const customFlows = getData("quid-custom-flows");
                  if (customFlows) {
-                     allFlows = [...allFlows, ...JSON.parse(customFlows)];
+                     if (customFlows) allFlows = [...allFlows, ...customFlows];
                  }
              } catch(e) { console.error(e); }
 

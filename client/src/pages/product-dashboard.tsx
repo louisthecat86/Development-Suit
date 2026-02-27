@@ -1,3 +1,4 @@
+import { getData, setData, getItem, setItem } from "@/lib/electron-storage";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -145,13 +146,13 @@ const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string; icon:
 // --- Helper Functions ---
 function loadProjects(): Project[] {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    const data = getData(STORAGE_KEY);
+    return data || [];
   } catch { return []; }
 }
 
 function saveProjects(projects: Project[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  setData(STORAGE_KEY, projects);
   window.dispatchEvent(new Event("projects-storage-update"));
 }
 
@@ -199,7 +200,7 @@ export default function ProductDashboard() {
     const loaded = loadProjects();
     setProjects(loaded);
     
-    const firstVisitDone = localStorage.getItem(FIRST_VISIT_KEY);
+    const firstVisitDone = getItem(FIRST_VISIT_KEY);
     if (!firstVisitDone && loaded.length === 0) {
       setShowLanding(true);
     }
@@ -213,13 +214,13 @@ export default function ProductDashboard() {
   }, []);
 
   const handleLandingStart = () => {
-    localStorage.setItem(FIRST_VISIT_KEY, "true");
+    setItem(FIRST_VISIT_KEY, "true");
     setShowLanding(false);
   };
 
   const handleLandingImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Import is handled by DataManagement component
-    localStorage.setItem(FIRST_VISIT_KEY, "true");
+    setItem(FIRST_VISIT_KEY, "true");
     setShowLanding(false);
     setTimeout(() => setProjects(loadProjects()), 500);
   };

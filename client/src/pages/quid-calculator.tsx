@@ -1,3 +1,4 @@
+import { getItem } from "@/lib/electron-storage";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,9 +59,9 @@ export default function QuidCalculator() {
 
   // Load Recipe from Session (if redirected from DB)
   useEffect(() => {
-    const loadId = localStorage.getItem("load-recipe-id");
+    const loadId = getItem("load-recipe-id");
     if (loadId) {
-      localStorage.removeItem("load-recipe-id");
+      // load-recipe-id consumed
       const recipe = recipes.find(r => r.id === loadId);
       if (recipe) {
         loadRecipe(recipe);

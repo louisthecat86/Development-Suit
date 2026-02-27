@@ -1,3 +1,4 @@
+import { getData } from "@/lib/electron-storage";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -254,7 +255,7 @@ export function ProjectRecipeEditor({ initialRecipe, onSave, autoSave = false, r
         }
 
         // Check for duplicates
-        const existingRecipes = JSON.parse(localStorage.getItem("quid-recipe-db-clean") || "[]") as SavedRecipe[];
+        const existingRecipes = getData("quid-recipe-db-clean") as SavedRecipe[] || [];
         const duplicate = existingRecipes.find(r => 
             (r.articleNumber && saveArticleNumber && r.articleNumber.trim() === saveArticleNumber.trim()) &&
             r.id !== initialRecipe?.id

@@ -1,3 +1,4 @@
+import { getData, setData } from "@/lib/electron-storage";
 import React, { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { 
@@ -59,10 +60,10 @@ export default function RecipeDatabase() {
   useEffect(() => {
       if (showSaveToProjectDialog) {
           try {
-              const data = localStorage.getItem("quid-projects-db-clean");
+              const data = getData("quid-projects-db-clean");
               if (data) {
-                  const projects = JSON.parse(data);
-                  setActiveProjects(projects.filter((p: any) => p.status !== 'archived'));
+                  const projects = data;
+                  setActiveProjects((projects || []).filter((p: any) => p.status !== 'archived'));
               }
           } catch (e) { console.error(e); }
       }
@@ -223,10 +224,10 @@ export default function RecipeDatabase() {
       if (!selectedProjectId || !sandboxRecipe) return;
 
       try {
-          const data = localStorage.getItem("quid-projects-db-clean");
+          const data = getData("quid-projects-db-clean");
           if (!data) return;
           
-          const projects = JSON.parse(data);
+          const projects = data;
           const projectIndex = projects.findIndex((p: any) => p.id === selectedProjectId);
           
           if (projectIndex >= 0) {
@@ -261,7 +262,7 @@ export default function RecipeDatabase() {
               project.latestResult = sandboxResult;
 
               projects[projectIndex] = project;
-              localStorage.setItem("quid-projects-db-clean", JSON.stringify(projects));
+              setData("quid-projects-db-clean", projects);
               
               toast({ title: "Gespeichert", description: `Rezeptur wurde in Projekt "${project.name}" übernommen.` });
               setShowSaveToProjectDialog(false);

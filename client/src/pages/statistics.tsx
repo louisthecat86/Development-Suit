@@ -1,3 +1,4 @@
+import { getData } from "@/lib/electron-storage";
 import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { 
@@ -52,9 +53,9 @@ export default function StatisticsPage() {
 
     useEffect(() => {
         try {
-            const data = localStorage.getItem("quid-projects-db-clean");
+            const data = getData("quid-projects-db-clean");
             if (data) {
-                setProjects(JSON.parse(data));
+                if (data) setProjects(data);
             }
         } catch (e) {
             console.error("Failed to load projects for stats", e);

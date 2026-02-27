@@ -1,3 +1,4 @@
+import { getData, setData } from "./electron-storage";
 import { MeatSpecies, NutritionalValues } from "./quid-calculator";
 import { useState, useEffect } from "react";
 
@@ -34,12 +35,12 @@ const INITIAL_DATA: SavedRecipe[] = [];
 export function getLibraryRecipes(): SavedRecipe[] {
   if (typeof window === "undefined") return [];
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_DATA));
+    const data = getData(STORAGE_KEY);
+    if (data === null) {
+      setData(STORAGE_KEY, INITIAL_DATA);
       return INITIAL_DATA;
     }
-    return JSON.parse(data);
+    return data;
   } catch (e) {
     console.error("Failed to load recipes", e);
     return [];
@@ -56,14 +57,14 @@ export function saveLibraryRecipe(recipe: SavedRecipe) {
     current.push({ ...recipe, updatedAt: new Date().toISOString() });
   }
   
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+  setData(STORAGE_KEY, current);
   window.dispatchEvent(new Event("recipe-storage-update"));
 }
 
 export function deleteLibraryRecipe(id: string) {
   const current = getLibraryRecipes();
   const next = current.filter(r => r.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  setData(STORAGE_KEY, next);
   window.dispatchEvent(new Event("recipe-storage-update"));
 }
 

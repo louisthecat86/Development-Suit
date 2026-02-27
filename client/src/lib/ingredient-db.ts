@@ -1,3 +1,4 @@
+import { getData, setData } from "./electron-storage";
 import { MeatSpecies, NutritionalValues } from "./quid-calculator";
 
 export interface LibraryIngredient {
@@ -25,13 +26,13 @@ const INITIAL_DATA: LibraryIngredient[] = [];
 export function getLibraryIngredients(): LibraryIngredient[] {
   if (typeof window === "undefined") return [];
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) {
+    const data = getData(STORAGE_KEY);
+    if (data === null) {
       // Initialize with defaults if empty
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_DATA));
+      setData(STORAGE_KEY, INITIAL_DATA);
       return INITIAL_DATA;
     }
-    return JSON.parse(data);
+    return data;
   } catch (e) {
     console.error("Failed to load ingredients", e);
     return [];
@@ -48,7 +49,7 @@ export function saveLibraryIngredient(ing: LibraryIngredient) {
     current.push(ing);
   }
   
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+  setData(STORAGE_KEY, current);
   // Dispatch event for live updates across components
   window.dispatchEvent(new Event("storage-update"));
 }
@@ -56,7 +57,7 @@ export function saveLibraryIngredient(ing: LibraryIngredient) {
 export function deleteLibraryIngredient(id: string) {
   const current = getLibraryIngredients();
   const next = current.filter(i => i.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  setData(STORAGE_KEY, next);
   window.dispatchEvent(new Event("storage-update"));
 }
 
