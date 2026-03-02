@@ -4,6 +4,8 @@ import { Link, useLocation } from "wouter";
 import { useDropzone } from 'react-dropzone';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import CryptoJS from "crypto-js";
+import * as XLSX from "xlsx";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,6 +83,7 @@ type TimelineEvent = {
     value?: string;
     target?: string;
     attachment?: string;
+    attachmentRef?: string; // Optional ZIP-internal reference for deduplicated attachments
     attachmentType?: string; // MIME type or extension
     attachmentContent?: string; // Base64 content (mockup)
     comments?: { id: number, user: string, text: string, date: string }[]; // NEW: Comments
@@ -585,6 +588,92 @@ export default function ProductDashboard() {
   // --- EXPORT / IMPORT (Local Backup) ---
   const handleExportBackup = async (options = backupOptions) => {
       const zip = new JSZip();
+      const attachmentHashToZipPath = new Map<string, string>();
+
+      const parseBool = (value: any): boolean => {
+          if (typeof value === "boolean") return value;
+          const v = String(value ?? "").trim().toLowerCase();
+          return ["ja", "true", "1", "x", "yes"].includes(v);
+      };
+
+      const parseNum = (value: any): number | undefined => {
+          if (value === null || value === undefined || value === "") return undefined;
+          const normalized = String(value).replace(",", ".");
+          const n = Number(normalized);
+          return Number.isFinite(n) ? n : undefined;
+      };
+
+      const parseList = (value: any): string[] | undefined => {
+          const raw = String(value ?? "").trim();
+          if (!raw) return undefined;
+          const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
+          return items.length > 0 ? items : undefined;
+      };
+
+      const toText = (value: any): string | undefined => {
+          const s = String(value ?? "").trim();
+          return s ? s : undefined;
+      };
+
+      const normalizeIngredientsFromExcelRows = (rows: any[]) => {
+          return rows
+              .map((row) => {
+                  const name = toText(row["Name"] ?? row["name"]);
+                  if (!name) return null;
+
+                  const fat = parseNum(row["Fett (%)"] ?? row["Fett"]);
+                  const protein = parseNum(row["Protein (%)"] ?? row["Protein"]);
+                  const water = parseNum(row["Wasser (%)"] ?? row["Wasser"]);
+                  const salt = parseNum(row["Salz (%)"] ?? row["Salz"]);
+                  const beffe = parseNum(row["BEFFE (%)"] ?? row["BEFFE"]);
+                  const energyKj = parseNum(row["Energie (kJ)"] ?? row["Energy (kJ)"]);
+                  const energyKcal = parseNum(row["Energie (kcal)"] ?? row["Energy (kcal)"]);
+                  const saturatedFat = parseNum(row["Ges. Fettsäuren (%)"] ?? row["Saturated fat (%)"]);
+                  const carbohydrates = parseNum(row["Kohlenhydrate (%)"] ?? row["Carbohydrates (%)"]);
+                  const sugar = parseNum(row["Zucker (%)"] ?? row["Sugar (%)"]);
+
+                  const nutrition: any = {};
+                  if (fat !== undefined) nutrition.fat = fat;
+                  if (protein !== undefined) nutrition.protein = protein;
+                  if (water !== undefined) nutrition.water = water;
+                  if (salt !== undefined) nutrition.salt = salt;
+                  if (beffe !== undefined) nutrition.beffe = beffe;
+                  if (energyKj !== undefined) nutrition.energyKj = energyKj;
+                  if (energyKcal !== undefined) nutrition.energyKcal = energyKcal;
+                  if (saturatedFat !== undefined) nutrition.saturatedFat = saturatedFat;
+                  if (carbohydrates !== undefined) nutrition.carbohydrates = carbohydrates;
+                  if (sugar !== undefined) nutrition.sugar = sugar;
+
+                  return {
+                      id: toText(row["ID"] ?? row["Id"] ?? row["id"]) || crypto.randomUUID(),
+                      name,
+                      articleNumber: toText(row["Artikelnummer"] ?? row["articleNumber"]),
+                      labelName: toText(row["Etikettentext"] ?? row["Labelname"] ?? row["labelName"]),
+                      isMeat: parseBool(row["Ist Fleisch"] ?? row["isMeat"]),
+                      isWater: parseBool(row["Ist Wasser"] ?? row["isWater"]),
+                      meatSpecies: toText(row["Fleischart"] ?? row["meatSpecies"]),
+                      connectiveTissuePercent: parseNum(row["Bindegewebe (%)"] ?? row["connectiveTissuePercent"]),
+                      meatProteinLimit: parseNum(row["Fleischeiweißgrenze (%)"] ?? row["meatProteinLimit"]),
+                      quidRequiredDefault: parseBool(row["QUID Pflicht"] ?? row["quidRequiredDefault"]),
+                      subIngredients: toText(row["Unterzutaten"] ?? row["subIngredients"]),
+                      processingAids: toText(row["Verarbeitungshilfsstoffe"] ?? row["processingAids"]),
+                      allergens: parseList(row["Allergene"] ?? row["allergens"]),
+                      nutrition,
+                  };
+              })
+              .filter(Boolean);
+      };
+
+      const hashAttachmentContent = (dataUrlOrRaw: string, fallbackName: string) => {
+          try {
+              const source = dataUrlOrRaw.startsWith("data:")
+                  ? (dataUrlOrRaw.split(",")[1] || dataUrlOrRaw)
+                  : dataUrlOrRaw;
+              return CryptoJS.SHA256(source).toString(CryptoJS.enc.Hex);
+          } catch {
+              return `fallback_${fallbackName}_${dataUrlOrRaw.length}`;
+          }
+      };
 
       // Filter projects based on backup options passed or state
       let projectsToBackup = projects;
@@ -624,6 +713,41 @@ export default function ProductDashboard() {
       const ingredientsData = sessionStorage.getItem("quid-ingredient-db-clean");
       if (ingredientsData) {
           zip.file("ingredients.json", ingredientsData);
+
+          try {
+              const ingredientList = JSON.parse(ingredientsData) || [];
+              const ingredientRows = ingredientList.map((ing: any) => ({
+                  ID: ing.id,
+                  Name: ing.name,
+                  Artikelnummer: ing.articleNumber || "",
+                  Etikettentext: ing.labelName || "",
+                  "Ist Fleisch": ing.isMeat ? "Ja" : "Nein",
+                  "Ist Wasser": ing.isWater ? "Ja" : "Nein",
+                  Fleischart: ing.meatSpecies || "",
+                  "Bindegewebe (%)": ing.connectiveTissuePercent ?? "",
+                  "Fleischeiweißgrenze (%)": ing.meatProteinLimit ?? "",
+                  "QUID Pflicht": ing.quidRequiredDefault ? "Ja" : "Nein",
+                  Unterzutaten: ing.subIngredients || "",
+                  Verarbeitungshilfsstoffe: ing.processingAids || "",
+                  Allergene: ing.allergens?.join(", ") || "",
+                  "Fett (%)": ing.nutrition?.fat ?? "",
+                  "Protein (%)": ing.nutrition?.protein ?? "",
+                  "Wasser (%)": ing.nutrition?.water ?? "",
+                  "Salz (%)": ing.nutrition?.salt ?? "",
+                  "BEFFE (%)": ing.nutrition?.beffe ?? "",
+                  "Energie (kJ)": ing.nutrition?.energyKj ?? "",
+                  "Energie (kcal)": ing.nutrition?.energyKcal ?? "",
+                  "Ges. Fettsäuren (%)": ing.nutrition?.saturatedFat ?? "",
+                  "Kohlenhydrate (%)": ing.nutrition?.carbohydrates ?? "",
+                  "Zucker (%)": ing.nutrition?.sugar ?? "",
+              }));
+              const wsIngredients = XLSX.utils.json_to_sheet(ingredientRows);
+              const wbIngredients = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wbIngredients, wsIngredients, "Zutaten");
+              zip.file("ingredients.xlsx", XLSX.write(wbIngredients, { type: "array", bookType: "xlsx" }));
+          } catch (e) {
+              console.error("Failed to create ingredients.xlsx for backup", e);
+          }
       }
 
       // 3. Global Recipes (Vorlagen)
@@ -635,7 +759,8 @@ export default function ProductDashboard() {
       // Create folder structure for Customers and Projects (Readable Backup AND Source for Restore)
       const customersFolder = zip.folder("Kunden");
       
-      projectsToBackup.forEach(project => {
+      for (let projectIndex = 0; projectIndex < projectsToBackup.length; projectIndex++) {
+          const project = projectsToBackup[projectIndex];
           const customerName = project.customer || "Allgemein";
           // Sanitize names for folder creation
           const safeCustomerName = customerName.replace(/[^a-z0-9äöüß \-]/gi, '_');
@@ -654,8 +779,17 @@ export default function ProductDashboard() {
 
               // Add timeline files - This is now the PRIMARY storage for attachments in the backup
               const filesFolder = projectFolder.folder("Dateien");
-              project.timeline.forEach(event => {
+              project.timeline.forEach((event, eventIndex) => {
                   if (event.attachment && event.attachmentContent) {
+                      const zipFilePath = `Kunden/${safeCustomerName}/${safeProjectName}/Dateien/${event.attachment}`;
+                      const attachmentHash = hashAttachmentContent(event.attachmentContent, event.attachment);
+                      const existingZipPath = attachmentHashToZipPath.get(attachmentHash);
+
+                      if (existingZipPath) {
+                          (leanProjects[projectIndex].timeline[eventIndex] as TimelineEvent).attachmentRef = existingZipPath;
+                          return;
+                      }
+
                       let content: string | Blob = event.attachmentContent;
                       
                       // If content is a data URL, convert to blob for the readable file and better compression
@@ -679,10 +813,11 @@ export default function ProductDashboard() {
                       }
                       
                       filesFolder?.file(event.attachment, content);
+                      attachmentHashToZipPath.set(attachmentHash, zipFilePath);
                   }
               });
           }
-      });
+      }
 
       const content = await zip.generateAsync({ 
           type: "blob",
@@ -699,6 +834,80 @@ export default function ProductDashboard() {
       const file = e.target.files?.[0];
       if (!file) return;
 
+      const parseBool = (value: any): boolean => {
+          if (typeof value === "boolean") return value;
+          const v = String(value ?? "").trim().toLowerCase();
+          return ["ja", "true", "1", "x", "yes"].includes(v);
+      };
+
+      const parseNum = (value: any): number | undefined => {
+          if (value === null || value === undefined || value === "") return undefined;
+          const normalized = String(value).replace(",", ".");
+          const n = Number(normalized);
+          return Number.isFinite(n) ? n : undefined;
+      };
+
+      const parseList = (value: any): string[] | undefined => {
+          const raw = String(value ?? "").trim();
+          if (!raw) return undefined;
+          const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
+          return items.length > 0 ? items : undefined;
+      };
+
+      const toText = (value: any): string | undefined => {
+          const s = String(value ?? "").trim();
+          return s ? s : undefined;
+      };
+
+      const normalizeIngredientsFromExcelRows = (rows: any[]) => {
+          return rows
+              .map((row) => {
+                  const name = toText(row["Name"] ?? row["name"]);
+                  if (!name) return null;
+
+                  const fat = parseNum(row["Fett (%)"] ?? row["Fett"]);
+                  const protein = parseNum(row["Protein (%)"] ?? row["Protein"]);
+                  const water = parseNum(row["Wasser (%)"] ?? row["Wasser"]);
+                  const salt = parseNum(row["Salz (%)"] ?? row["Salz"]);
+                  const beffe = parseNum(row["BEFFE (%)"] ?? row["BEFFE"]);
+                  const energyKj = parseNum(row["Energie (kJ)"] ?? row["Energy (kJ)"]);
+                  const energyKcal = parseNum(row["Energie (kcal)"] ?? row["Energy (kcal)"]);
+                  const saturatedFat = parseNum(row["Ges. Fettsäuren (%)"] ?? row["Saturated fat (%)"]);
+                  const carbohydrates = parseNum(row["Kohlenhydrate (%)"] ?? row["Carbohydrates (%)"]);
+                  const sugar = parseNum(row["Zucker (%)"] ?? row["Sugar (%)"]);
+
+                  const nutrition: any = {};
+                  if (fat !== undefined) nutrition.fat = fat;
+                  if (protein !== undefined) nutrition.protein = protein;
+                  if (water !== undefined) nutrition.water = water;
+                  if (salt !== undefined) nutrition.salt = salt;
+                  if (beffe !== undefined) nutrition.beffe = beffe;
+                  if (energyKj !== undefined) nutrition.energyKj = energyKj;
+                  if (energyKcal !== undefined) nutrition.energyKcal = energyKcal;
+                  if (saturatedFat !== undefined) nutrition.saturatedFat = saturatedFat;
+                  if (carbohydrates !== undefined) nutrition.carbohydrates = carbohydrates;
+                  if (sugar !== undefined) nutrition.sugar = sugar;
+
+                  return {
+                      id: toText(row["ID"] ?? row["Id"] ?? row["id"]) || crypto.randomUUID(),
+                      name,
+                      articleNumber: toText(row["Artikelnummer"] ?? row["articleNumber"]),
+                      labelName: toText(row["Etikettentext"] ?? row["Labelname"] ?? row["labelName"]),
+                      isMeat: parseBool(row["Ist Fleisch"] ?? row["isMeat"]),
+                      isWater: parseBool(row["Ist Wasser"] ?? row["isWater"]),
+                      meatSpecies: toText(row["Fleischart"] ?? row["meatSpecies"]),
+                      connectiveTissuePercent: parseNum(row["Bindegewebe (%)"] ?? row["connectiveTissuePercent"]),
+                      meatProteinLimit: parseNum(row["Fleischeiweißgrenze (%)"] ?? row["meatProteinLimit"]),
+                      quidRequiredDefault: parseBool(row["QUID Pflicht"] ?? row["quidRequiredDefault"]),
+                      subIngredients: toText(row["Unterzutaten"] ?? row["subIngredients"]),
+                      processingAids: toText(row["Verarbeitungshilfsstoffe"] ?? row["processingAids"]),
+                      allergens: parseList(row["Allergene"] ?? row["allergens"]),
+                      nutrition,
+                  };
+              })
+              .filter(Boolean);
+      };
+
       const reader = new FileReader();
       reader.onload = async (evt) => {
           try {
@@ -706,13 +915,27 @@ export default function ProductDashboard() {
               
               let restoredCount = 0;
 
-              // 1. Restore Ingredients (First, as they might be needed)
-              const ingredientsFile = zip.file("ingredients.json");
-              if (ingredientsFile) {
-                  const content = await ingredientsFile.async("string");
-                  sessionStorage.setItem("quid-ingredient-db-clean", content);
-                  window.dispatchEvent(new Event("storage-update"));
-                  restoredCount++;
+              // 1. Restore Ingredients (prefer editable Excel if present)
+              const ingredientsExcelFile = zip.file("ingredients.xlsx");
+              if (ingredientsExcelFile) {
+                  const content = await ingredientsExcelFile.async("arraybuffer");
+                  const wb = XLSX.read(content, { type: "array" });
+                  const firstSheet = wb.SheetNames[0];
+                  if (firstSheet) {
+                      const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], { defval: "" });
+                      const normalized = normalizeIngredientsFromExcelRows(rows as any[]);
+                      sessionStorage.setItem("quid-ingredient-db-clean", JSON.stringify(normalized));
+                      window.dispatchEvent(new Event("storage-update"));
+                      restoredCount++;
+                  }
+              } else {
+                  const ingredientsFile = zip.file("ingredients.json");
+                  if (ingredientsFile) {
+                      const content = await ingredientsFile.async("string");
+                      sessionStorage.setItem("quid-ingredient-db-clean", content);
+                      window.dispatchEvent(new Event("storage-update"));
+                      restoredCount++;
+                  }
               }
 
               // 2. Restore Recipes
@@ -741,7 +964,10 @@ export default function ProductDashboard() {
                           if (event.attachment && !event.attachmentContent) {
                               // Content is missing in JSON, look for it in the zip
                               const filePath = `Kunden/${safeCustomerName}/${safeProjectName}/Dateien/${event.attachment}`;
-                              const fileInZip = zip.file(filePath);
+                              let fileInZip = zip.file(filePath);
+                              if (!fileInZip && event.attachmentRef) {
+                                  fileInZip = zip.file(event.attachmentRef);
+                              }
                               
                               if (fileInZip) {
                                   // Found it! Convert back to base64/dataURL for the app to use

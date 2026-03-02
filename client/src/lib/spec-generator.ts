@@ -136,6 +136,17 @@ async function translateWithDeepL(
   }
 }
 
+async function translateForEnglishExport(
+  text: string,
+  lang: SpecLanguage,
+  deeplApiKey?: string
+): Promise<string> {
+  if (!text) return "";
+  if (lang !== "en" || !deeplApiKey) return text;
+  const translated = await translateWithDeepL(text, "EN", deeplApiKey);
+  return translated || text;
+}
+
 // --- Load Template ---
 async function loadTemplate(lang: SpecLanguage): Promise<ArrayBuffer> {
   const filename = `spec-template-${lang}.xlsx`;
@@ -222,24 +233,19 @@ export async function generateSpecificationExcel(
 
   // --- Article Info ---
   set(map.articleNumber, options?.articleNumber || recipe?.articleNumber || "");
-  set(map.articleName, recipeName);
+  const translatedArticleName = await translateForEnglishExport(recipeName, lang, options?.deeplApiKey);
+  set(map.articleName, translatedArticleName);
 
   // --- Ingredients / Label Text ---
   let ingredientText = result.labelText;
 
-  // If English and DeepL key provided, translate the ingredient text
-  if (lang === "en" && options?.deeplApiKey && ingredientText) {
+  if (lang === "en" && options?.deeplApiKey) {
     console.log("DeepL: API key present, attempting translation...");
-    const translated = await translateWithDeepL(ingredientText, "EN", options.deeplApiKey);
-    if (translated) {
-      ingredientText = translated;
-      console.log("DeepL: Ingredient text translated successfully");
-    } else {
-      console.warn("DeepL: Translation returned null, using original German text");
-    }
   } else if (lang === "en") {
     console.log("DeepL: No API key provided, skipping translation");
   }
+
+  ingredientText = await translateForEnglishExport(ingredientText, lang, options?.deeplApiKey);
 
   set(map.ingredients, ingredientText);
 
@@ -259,6 +265,17 @@ export async function generateSpecificationExcel(
         set(`${map.aidSourceCol}${row}`, detail.sources.join(", "));
       }
     });
+
+    if (lang === "en" && options?.deeplApiKey) {
+      for (let index = 0; index < result.processingAidDetails.length && index < maxAidSlots; index++) {
+        const detail: any = result.processingAidDetails[index];
+        const row = map.aidStartRow + index;
+        const translatedAidName = await translateForEnglishExport(detail.name || "", lang, options.deeplApiKey);
+        const translatedAidSource = await translateForEnglishExport((detail.sources || []).join(", "), lang, options.deeplApiKey);
+        set(`${map.aidNameCol}${row}`, translatedAidName);
+        set(`${map.aidSourceCol}${row}`, translatedAidSource);
+      }
+    }
   }
 
   // --- Sensory (if provided) ---
@@ -293,18 +310,19 @@ export async function generateSpecificationExcel(
 
   if (result.allergenDetails && result.allergenDetails.length > 0) {
     // Use explicit allergen data
-    result.allergenDetails.forEach((detail: any) => {
-      ALLERGEN_KEYS.forEach((ak) => {
+    for (const detail of result.allergenDetails as any[]) {
+      for (const ak of ALLERGEN_KEYS) {
         if (ak.keys.some((k) => detail.id?.toLowerCase().includes(k))) {
           const row = map.allergenStartRow + ak.offset;
           set(`${map.allergenYesCol}${row}`, "X");
           set(`${map.allergenNoCol}${row}`, "");
           const current = sheet.cell(`${map.allergenSourceCol}${row}`).value();
-          const src = detail.sources.join(", ");
+          let src = detail.sources.join(", ");
+          src = await translateForEnglishExport(src, lang, options?.deeplApiKey);
           set(`${map.allergenSourceCol}${row}`, current ? `${current}, ${src}` : src);
         }
-      });
-    });
+      }
+    }
   } else if (result.allAllergens && result.allAllergens.length > 0) {
     result.allAllergens.forEach((allergenKey: string) => {
       ALLERGEN_KEYS.forEach((ak) => {

@@ -193,8 +193,94 @@ export function DataManagement() {
       } catch (e) { return []; }
   };
 
+  const parseBool = (value: any): boolean => {
+      if (typeof value === "boolean") return value;
+      const v = String(value ?? "").trim().toLowerCase();
+      return ["ja", "true", "1", "x", "yes"].includes(v);
+  };
+
+  const parseNum = (value: any): number | undefined => {
+      if (value === null || value === undefined || value === "") return undefined;
+      const normalized = String(value).replace(",", ".");
+      const n = Number(normalized);
+      return Number.isFinite(n) ? n : undefined;
+  };
+
+  const parseList = (value: any): string[] | undefined => {
+      const raw = String(value ?? "").trim();
+      if (!raw) return undefined;
+      const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      return items.length > 0 ? items : undefined;
+  };
+
+  const toText = (value: any): string | undefined => {
+      const s = String(value ?? "").trim();
+      return s ? s : undefined;
+  };
+
+  const normalizeIngredientsFromExcelRows = (rows: any[]): LibraryIngredient[] => {
+      return rows
+          .map((row) => {
+              const name = toText(row["Name"] ?? row["name"]);
+              if (!name) return null;
+
+              const fat = parseNum(row["Fett (%)"] ?? row["Fett"]);
+              const protein = parseNum(row["Protein (%)"] ?? row["Protein"]);
+              const water = parseNum(row["Wasser (%)"] ?? row["Wasser"]);
+              const salt = parseNum(row["Salz (%)"] ?? row["Salz"]);
+              const beffe = parseNum(row["BEFFE (%)"] ?? row["BEFFE"]);
+              const energyKj = parseNum(row["Energie (kJ)"] ?? row["Energy (kJ)"]);
+              const energyKcal = parseNum(row["Energie (kcal)"] ?? row["Energy (kcal)"]);
+              const saturatedFat = parseNum(row["Ges. Fettsäuren (%)"] ?? row["Saturated fat (%)"]);
+              const carbohydrates = parseNum(row["Kohlenhydrate (%)"] ?? row["Carbohydrates (%)"]);
+              const sugar = parseNum(row["Zucker (%)"] ?? row["Sugar (%)"]);
+
+              const nutrition: any = {};
+              if (fat !== undefined) nutrition.fat = fat;
+              if (protein !== undefined) nutrition.protein = protein;
+              if (water !== undefined) nutrition.water = water;
+              if (salt !== undefined) nutrition.salt = salt;
+              if (beffe !== undefined) nutrition.beffe = beffe;
+              if (energyKj !== undefined) nutrition.energyKj = energyKj;
+              if (energyKcal !== undefined) nutrition.energyKcal = energyKcal;
+              if (saturatedFat !== undefined) nutrition.saturatedFat = saturatedFat;
+              if (carbohydrates !== undefined) nutrition.carbohydrates = carbohydrates;
+              if (sugar !== undefined) nutrition.sugar = sugar;
+
+              return {
+                  id: toText(row["ID"] ?? row["Id"] ?? row["id"]) || crypto.randomUUID(),
+                  name,
+                  articleNumber: toText(row["Artikelnummer"] ?? row["articleNumber"]),
+                  labelName: toText(row["Etikettentext"] ?? row["Labelname"] ?? row["labelName"]),
+                  isMeat: parseBool(row["Ist Fleisch"] ?? row["isMeat"]),
+                  isWater: parseBool(row["Ist Wasser"] ?? row["isWater"]),
+                  meatSpecies: toText(row["Fleischart"] ?? row["meatSpecies"]) as any,
+                  connectiveTissuePercent: parseNum(row["Bindegewebe (%)"] ?? row["connectiveTissuePercent"]),
+                  meatProteinLimit: parseNum(row["Fleischeiweißgrenze (%)"] ?? row["meatProteinLimit"]),
+                  quidRequiredDefault: parseBool(row["QUID Pflicht"] ?? row["quidRequiredDefault"]),
+                  subIngredients: toText(row["Unterzutaten"] ?? row["subIngredients"]),
+                  processingAids: toText(row["Verarbeitungshilfsstoffe"] ?? row["processingAids"]),
+                  allergens: parseList(row["Allergene"] ?? row["allergens"]),
+                  nutrition,
+              } as LibraryIngredient;
+          })
+          .filter(Boolean) as LibraryIngredient[];
+  };
+
   const handleExportBackup = async (options = { includeArchived: true, onlyArchived: false }) => {
       const zip = new JSZip();
+      const attachmentHashToZipPath = new Map<string, string>();
+
+      const hashAttachmentContent = (dataUrlOrRaw: string, fallbackName: string) => {
+          try {
+              const source = dataUrlOrRaw.startsWith("data:")
+                  ? (dataUrlOrRaw.split(",")[1] || dataUrlOrRaw)
+                  : dataUrlOrRaw;
+              return CryptoJS.SHA256(source).toString(CryptoJS.enc.Hex);
+          } catch {
+              return `fallback_${fallbackName}_${dataUrlOrRaw.length}`;
+          }
+      };
       
       let projects = getProjects();
       let projectsToBackup = projects;
@@ -227,8 +313,39 @@ export function DataManagement() {
       zip.file("projects.json", JSON.stringify(leanProjects, null, 2));
 
       // 2. Global Ingredients & Recipes
-      const ingredientsData = JSON.stringify(getData("quid-ingredient-db-clean") || []);
+      const ingredientList = getData("quid-ingredient-db-clean") || [];
+      const ingredientsData = JSON.stringify(ingredientList);
       if (ingredientsData) zip.file("ingredients.json", ingredientsData);
+
+      const ingredientRows = (ingredientList as LibraryIngredient[]).map((ing) => ({
+          ID: ing.id,
+          Name: ing.name,
+          Artikelnummer: ing.articleNumber || "",
+          Etikettentext: ing.labelName || "",
+          "Ist Fleisch": ing.isMeat ? "Ja" : "Nein",
+          "Ist Wasser": ing.isWater ? "Ja" : "Nein",
+          Fleischart: ing.meatSpecies || "",
+          "Bindegewebe (%)": ing.connectiveTissuePercent ?? "",
+          "Fleischeiweißgrenze (%)": ing.meatProteinLimit ?? "",
+          "QUID Pflicht": ing.quidRequiredDefault ? "Ja" : "Nein",
+          Unterzutaten: ing.subIngredients || "",
+          Verarbeitungshilfsstoffe: ing.processingAids || "",
+          Allergene: ing.allergens?.join(", ") || "",
+          "Fett (%)": ing.nutrition?.fat ?? "",
+          "Protein (%)": ing.nutrition?.protein ?? "",
+          "Wasser (%)": ing.nutrition?.water ?? "",
+          "Salz (%)": ing.nutrition?.salt ?? "",
+          "BEFFE (%)": ing.nutrition?.beffe ?? "",
+          "Energie (kJ)": (ing.nutrition as any)?.energyKj ?? "",
+          "Energie (kcal)": (ing.nutrition as any)?.energyKcal ?? "",
+          "Ges. Fettsäuren (%)": (ing.nutrition as any)?.saturatedFat ?? "",
+          "Kohlenhydrate (%)": (ing.nutrition as any)?.carbohydrates ?? "",
+          "Zucker (%)": (ing.nutrition as any)?.sugar ?? "",
+      }));
+      const wsIngredients = XLSX.utils.json_to_sheet(ingredientRows);
+      const wbIngredients = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wbIngredients, wsIngredients, "Zutaten");
+      zip.file("ingredients.xlsx", XLSX.write(wbIngredients, { type: "array", bookType: "xlsx" }));
 
       const recipesData = JSON.stringify(getData("quid-recipe-db-clean") || []);
       if (recipesData) zip.file("recipes.json", recipesData);
@@ -236,7 +353,8 @@ export function DataManagement() {
       // 3. Readable Folder Structure (Customers -> Projects)
       const customersFolder = zip.folder("Kunden");
       
-      for (const project of projectsToBackup) {
+      for (let projectIndex = 0; projectIndex < projectsToBackup.length; projectIndex++) {
+          const project = projectsToBackup[projectIndex];
           const customerName = project.customer || "Allgemein";
           const safeCustomerName = customerName.replace(/[^a-z0-9äöüß \-]/gi, '_');
           const safeProjectName = project.name.replace(/[^a-z0-9äöüß \-]/gi, '_');
@@ -252,13 +370,25 @@ export function DataManagement() {
 
               // Timeline Attachments
               const filesFolder = projectFolder.folder("Dateien");
-              for (const event of (project.timeline || [])) {
+              for (let eventIndex = 0; eventIndex < (project.timeline || []).length; eventIndex++) {
+                  const event = project.timeline[eventIndex];
                   if (event.attachment) {
+                      const zipFilePath = `Kunden/${safeCustomerName}/${safeProjectName}/Dateien/${event.attachment}`;
+                      let contentDataForHash: string | null = null;
+
                       // Electron: load from file system via path
                       if (isElectron() && window.electronAPI && event.attachmentPath) {
                           try {
                               const fileInfo = await window.electronAPI.loadProjectFile(event.attachmentPath);
-                              if (fileInfo) {
+                              if (fileInfo?.data) {
+                                  contentDataForHash = fileInfo.data;
+                                  const hash = hashAttachmentContent(contentDataForHash, event.attachment);
+                                  const existingPath = attachmentHashToZipPath.get(hash);
+                                  if (existingPath) {
+                                      leanProjects[projectIndex].timeline[eventIndex].attachmentRef = existingPath;
+                                      continue;
+                                  }
+
                                   // Convert data URL to binary
                                   const arr = fileInfo.data.split(',');
                                   const bstr = atob(arr[1]);
@@ -266,6 +396,7 @@ export function DataManagement() {
                                   const u8arr = new Uint8Array(n);
                                   while(n--){ u8arr[n] = bstr.charCodeAt(n); }
                                   filesFolder?.file(event.attachment, u8arr);
+                                  attachmentHashToZipPath.set(hash, zipFilePath);
                               }
                           } catch (e) {
                               console.error("Failed to load file for backup:", event.attachment, e);
@@ -273,6 +404,14 @@ export function DataManagement() {
                       }
                       // Browser/legacy: base64 content inline
                       else if (event.attachmentContent) {
+                          contentDataForHash = event.attachmentContent;
+                          const hash = hashAttachmentContent(contentDataForHash, event.attachment);
+                          const existingPath = attachmentHashToZipPath.get(hash);
+                          if (existingPath) {
+                              leanProjects[projectIndex].timeline[eventIndex].attachmentRef = existingPath;
+                              continue;
+                          }
+
                           let content: string | Blob = event.attachmentContent;
                           if (typeof content === 'string' && content.startsWith('data:')) {
                               try {
@@ -290,6 +429,7 @@ export function DataManagement() {
                               }
                           }
                           filesFolder?.file(event.attachment, content);
+                          attachmentHashToZipPath.set(hash, zipFilePath);
                       }
                   }
               }
@@ -374,6 +514,23 @@ export function DataManagement() {
                       const content = await projectsFile.async("string");
                       let projects = JSON.parse(content);
 
+                      // Re-hydrate attachment content from ZIP (supports deduplicated attachmentRef)
+                      for (const project of projects) {
+                          const customer = (project.customer || "Allgemein").replace(/[^a-z0-9äöüß \-]/gi, '_');
+                          const projectName = (project.name || "Unbenannt").replace(/[^a-z0-9äöüß \-]/gi, '_');
+                          if (!project.timeline) continue;
+                          for (const event of project.timeline) {
+                              if (event.attachment && !event.attachmentContent) {
+                                  const ownPath = `Kunden/${customer}/${projectName}/Dateien/${event.attachment}`;
+                                  const fileInZip = zip.file(ownPath) || (event.attachmentRef ? zip.file(event.attachmentRef) : null);
+                                  if (fileInZip) {
+                                      const b64 = await fileInZip.async("base64");
+                                      event.attachmentContent = `data:application/octet-stream;base64,${b64}`;
+                                  }
+                              }
+                          }
+                      }
+
                       // In Electron: check if projects have base64 attachmentContent
                       // and save those files to disk, replacing with file paths
                       if (isElectron() && window.electronAPI) {
@@ -403,13 +560,27 @@ export function DataManagement() {
                       restoredCount++;
                   }
 
-                  // Restore Ingredients
-                  const ingredientsFile = zip.file("ingredients.json");
-                  if (ingredientsFile) {
-                      const content = await ingredientsFile.async("string");
-                      await setDataAsync("quid-ingredient-db-clean", JSON.parse(content));
-                      window.dispatchEvent(new Event("storage-update"));
-                      restoredCount++;
+                  // Restore Ingredients (prefer editable Excel if present)
+                  const ingredientsExcelFile = zip.file("ingredients.xlsx");
+                  if (ingredientsExcelFile) {
+                      const content = await ingredientsExcelFile.async("arraybuffer");
+                      const wb = XLSX.read(content, { type: "array" });
+                      const firstSheet = wb.SheetNames[0];
+                      if (firstSheet) {
+                          const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], { defval: "" });
+                          const normalized = normalizeIngredientsFromExcelRows(rows as any[]);
+                          await setDataAsync("quid-ingredient-db-clean", normalized);
+                          window.dispatchEvent(new Event("storage-update"));
+                          restoredCount++;
+                      }
+                  } else {
+                      const ingredientsFile = zip.file("ingredients.json");
+                      if (ingredientsFile) {
+                          const content = await ingredientsFile.async("string");
+                          await setDataAsync("quid-ingredient-db-clean", JSON.parse(content));
+                          window.dispatchEvent(new Event("storage-update"));
+                          restoredCount++;
+                      }
                   }
 
                   // Restore Recipes

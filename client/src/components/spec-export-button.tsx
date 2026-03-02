@@ -56,7 +56,7 @@ export function SpecExportButton({
       const deeplApiKey = lang === "en" ? (getDeepLApiKey() || undefined) : undefined;
       
       if (lang === "en" && !deeplApiKey) {
-        toast({ title: "Hinweis", description: "Kein DeepL API-Key hinterlegt. Etikettentext wird nicht übersetzt." });
+        toast({ title: "Hinweis", description: "Kein DeepL API-Key hinterlegt. Etikettentext, Artikelbezeichnung, Verarbeitungshilfsstoffe und Allergenquellen werden nicht übersetzt." });
       }
       
       await generateSpecificationExcel(recipeName, result, recipe, lang, {
@@ -68,7 +68,7 @@ export function SpecExportButton({
       const msg = lang === "en" && deeplApiKey
         ? "Englische Spezifikation mit DeepL-Übersetzung erstellt."
         : lang === "en"
-          ? "Englische Spezifikation erstellt (Etikettentext nicht übersetzt)."
+          ? "Englische Spezifikation erstellt (ohne automatische DeepL-Übersetzung)."
           : "Deutsche Spezifikation erstellt.";
       toast({ title: "Export erfolgreich", description: msg });
     } catch (e) {
@@ -119,7 +119,7 @@ export function SpecExportButton({
           <DialogHeader>
             <DialogTitle>DeepL API-Key</DialogTitle>
             <DialogDescription>
-              Mit einem DeepL API-Key wird der Etikettentext automatisch ins Englische übersetzt und in die Spezifikation eingetragen.
+              Mit einem DeepL API-Key werden Etikettentext, Artikelbezeichnung, Verarbeitungshilfsstoffe und Allergenquellen automatisch ins Englische übersetzt und in die Spezifikation eingetragen.
               Ohne Key wird der deutsche Originaltext verwendet.
             </DialogDescription>
           </DialogHeader>
