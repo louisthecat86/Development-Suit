@@ -25,6 +25,8 @@ declare global {
       showSaveDialog: (defaultName: string) => Promise<string | null>;
       showOpenDialog: () => Promise<string | null>;
       writeZipToDisk: (filePath: string, base64: string) => Promise<boolean>;
+      loadTemplate: (templateName: string) => Promise<string | null>;
+      saveXlsxToDisk: (base64Data: string, defaultName: string) => Promise<boolean>;
       getDataPath: () => Promise<string>;
     };
   }

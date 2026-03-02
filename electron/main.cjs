@@ -214,6 +214,48 @@ ipcMain.handle("show-save-dialog", async (event, defaultName) => {
   return canceled ? null : filePath;
 });
 
+// Show save dialog for Excel files
+ipcMain.handle("show-save-dialog-xlsx", async (event, defaultName) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: "Spezifikation speichern",
+    defaultPath: defaultName,
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  return canceled ? null : filePath;
+});
+
+// Load a bundled template file (from electron/assets/)
+ipcMain.handle("load-template", (event, templateName) => {
+  try {
+    const templatePath = path.join(__dirname, "assets", templateName);
+    if (!fs.existsSync(templatePath)) {
+      console.error("Template not found:", templatePath);
+      return null;
+    }
+    return fs.readFileSync(templatePath).toString("base64");
+  } catch (err) {
+    console.error("load-template error:", err);
+    return null;
+  }
+});
+
+// Save an Excel buffer to disk (for spec export)
+ipcMain.handle("save-xlsx-to-disk", async (event, base64Data, defaultName) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: "Spezifikation speichern",
+    defaultPath: defaultName,
+    filters: [{ name: "Excel Datei", extensions: ["xlsx"] }],
+  });
+  if (canceled || !filePath) return false;
+  try {
+    fs.writeFileSync(filePath, Buffer.from(base64Data, "base64"));
+    return true;
+  } catch (err) {
+    console.error("save-xlsx-to-disk error:", err);
+    return false;
+  }
+});
+
 // Show open dialog (for backup import)
 ipcMain.handle("show-open-dialog", async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {

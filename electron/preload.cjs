@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   showOpenDialog: () => ipcRenderer.invoke("show-open-dialog"),
   writeZipToDisk: (filePath, base64) => ipcRenderer.invoke("write-zip-to-disk", filePath, base64),
 
+  // Spec Templates
+  loadTemplate: (templateName) => ipcRenderer.invoke("load-template", templateName),
+  saveXlsxToDisk: (base64Data, defaultName) => ipcRenderer.invoke("save-xlsx-to-disk", base64Data, defaultName),
+
   // Info
   getDataPath: () => ipcRenderer.invoke("get-data-path"),
 });

@@ -1,253 +1,322 @@
-import * as XLSX from "xlsx";
+// @ts-ignore - no types for browser build
+import XlsxPopulate from "xlsx-populate/browser/xlsx-populate";
 import { QuidResult } from "./quid-calculator";
 import { SavedRecipe } from "./recipe-db";
 
-type SpecLanguage = "de" | "en";
+export type SpecLanguage = "de" | "en";
 
-const LABELS: Record<SpecLanguage, Record<string, string>> = {
+// DeepL Free API endpoint
+const DEEPL_API_URL = "https://api-free.deepl.com/v2/translate";
+
+// Cell mappings per language (based on actual template analysis)
+const CELL_MAP = {
   de: {
-    title: "Produktspezifikation",
-    articleNumber: "Artikelnummer",
-    articleName: "Artikelbezeichnung",
-    validFrom: "Gültig ab",
-    ingredients: "Zutaten",
-    processingAids: "Verarbeitungshilfsstoffe",
-    aidName: "Bezeichnung",
-    aidSource: "Herkunft/Quelle",
-    none: "Keine",
-    nutrition: "Nährwertdeklaration pro 100 g",
-    parameter: "Parameter",
-    per100g: "pro 100 g",
-    energy: "Energie",
-    fat: "Fett",
-    saturatedFat: "davon gesättigte Fettsäuren",
-    carbs: "Kohlenhydrate",
-    sugar: "davon Zucker",
-    protein: "Eiweiß",
-    salt: "Salz",
-    meatContent: "Fleischanteil (berechnet)",
-    water: "Wasser (kalkulatorisch)",
-    allergens: "Allergen-Management",
-    allergenName: "Allergen",
-    present: "Enthalten",
-    notPresent: "Nicht enthalten",
-    source: "Quelle/Zutat",
-    yes: "Ja",
-    no: "Nein",
-    gluten: "Glutenhaltiges Getreide",
-    eggs: "Eier",
-    soy: "Soja",
-    milk: "Milch/Laktose",
-    nuts: "Schalenfrüchte",
-    celery: "Sellerie",
-    mustard: "Senf",
-    sesame: "Sesam",
-    sulfites: "Sulfite/SO₂",
-    lupin: "Lupine",
-    molluscs: "Weichtiere",
-    peanuts: "Erdnüsse",
-    fish: "Fisch",
-    crustaceans: "Krebstiere",
-    rawMass: "Gesamt-Rohmasse",
-    endWeight: "Endgewicht",
-    cookingLoss: "Garverlust",
-    recipeDetails: "Rezepturdetails",
-    sheetName: "Spezifikation",
+    validDate: "J1",        // "Spezifikation gültig ab ..."
+    articleNumber: "C5",
+    articleName: "C6",
+    unitWeight: "C7",
+    tolerance: "H7",
+    ingredients: "C8",       // merged C8:K12
+    // Processing aids: C15-C18 (name), H15-H18 (source)
+    aidStartRow: 15,
+    aidNameCol: "C",
+    aidSourceCol: "H",
+    // Sensory
+    sensoryAppearance: "C20",
+    sensoryTexture: "C21",
+    sensoryOdor: "C22",
+    sensoryTaste: "C23",
+    // Nutrition (values in column H)
+    nutritionEnergyKj: "H25",
+    nutritionEnergyKcal: "H26",
+    nutritionFat: "H27",
+    nutritionSatFat: "H28",
+    nutritionCarbs: "H29",
+    nutritionSugar: "H30",
+    nutritionProtein: "H31",
+    nutritionSalt: "H32",
+    // Allergens rows 48-56, columns F(ja) G(nein) I(source)
+    allergenStartRow: 48,
+    allergenYesCol: "F",
+    allergenNoCol: "G",
+    allergenSourceCol: "I",
+    allergenEndRow: 56,
   },
   en: {
-    title: "Product Specification",
-    articleNumber: "Article Number",
-    articleName: "Article Name",
-    validFrom: "Valid from",
-    ingredients: "Ingredients",
-    processingAids: "Processing Aids",
-    aidName: "Name",
-    aidSource: "Origin/Source",
-    none: "None",
-    nutrition: "Nutrition Declaration per 100 g",
-    parameter: "Parameter",
-    per100g: "per 100 g",
-    energy: "Energy",
-    fat: "Fat",
-    saturatedFat: "of which saturated fatty acids",
-    carbs: "Carbohydrates",
-    sugar: "of which sugars",
-    protein: "Protein",
-    salt: "Salt",
-    meatContent: "Meat content (calculated)",
-    water: "Water (calculated)",
-    allergens: "Allergen Management",
-    allergenName: "Allergen",
-    present: "Present",
-    notPresent: "Not present",
-    source: "Source/Ingredient",
-    yes: "Yes",
-    no: "No",
-    gluten: "Cereals containing gluten",
-    eggs: "Eggs",
-    soy: "Soya",
-    milk: "Milk/Lactose",
-    nuts: "Tree nuts",
-    celery: "Celery",
-    mustard: "Mustard",
-    sesame: "Sesame",
-    sulfites: "Sulphites/SO₂",
-    lupin: "Lupin",
-    molluscs: "Molluscs",
-    peanuts: "Peanuts",
-    fish: "Fish",
-    crustaceans: "Crustaceans",
-    rawMass: "Total raw mass",
-    endWeight: "End weight",
-    cookingLoss: "Cooking loss",
-    recipeDetails: "Recipe Details",
-    sheetName: "Specification",
+    validDate: "J1",
+    articleNumber: "C5",
+    articleName: "C6",
+    unitWeight: "C7",
+    tolerance: "H7",
+    ingredients: "C8",       // merged C8:K11
+    // Processing aids: C17-C20 (name), H17-H20 (source)
+    aidStartRow: 17,
+    aidNameCol: "C",
+    aidSourceCol: "H",
+    // Sensory
+    sensoryAppearance: "C22",
+    sensoryTexture: "C23",
+    sensoryOdor: "C24",
+    sensoryTaste: "C25",
+    // Nutrition (values in column H)
+    nutritionEnergyKj: "H27",
+    nutritionEnergyKcal: "H28",
+    nutritionFat: "H29",
+    nutritionSatFat: "H30",
+    nutritionCarbs: "H31",
+    nutritionSugar: "H32",
+    nutritionProtein: "H33",
+    nutritionSalt: "H34",
+    // Allergens rows 53-61, columns F(yes) G(no) I(source)
+    allergenStartRow: 53,
+    allergenYesCol: "F",
+    allergenNoCol: "G",
+    allergenSourceCol: "I",
+    allergenEndRow: 61,
   },
 };
 
-// Allergen detection keys (German, as used in ingredient data)
-const ALLERGEN_KEYS: { id: string; deKey: string }[] = [
-  { id: "gluten", deKey: "gluten" },
-  { id: "eggs", deKey: "ei" },
-  { id: "soy", deKey: "soja" },
-  { id: "milk", deKey: "milch" },
-  { id: "nuts", deKey: "schalenfrüchte" },
-  { id: "celery", deKey: "sellerie" },
-  { id: "mustard", deKey: "senf" },
-  { id: "sesame", deKey: "sesam" },
-  { id: "sulfites", deKey: "sulfit" },
-  { id: "lupin", deKey: "lupine" },
-  { id: "molluscs", deKey: "weichtiere" },
-  { id: "peanuts", deKey: "erdnüsse" },
-  { id: "fish", deKey: "fisch" },
-  { id: "crustaceans", deKey: "krebstiere" },
+// Allergen detection keys mapped to row offsets (0-8)
+const ALLERGEN_KEYS = [
+  { offset: 0, keys: ["gluten", "glutenhaltiges getreide", "cereals"] },
+  { offset: 1, keys: ["ei", "eier", "eggs"] },
+  { offset: 2, keys: ["soja", "sojabohnen", "soy", "soybeans"] },
+  { offset: 3, keys: ["milch", "laktose", "milk", "lactose"] },
+  { offset: 4, keys: ["schalenfrüchte", "nüsse", "pistazien", "nuts", "pistachio"] },
+  { offset: 5, keys: ["sellerie", "celery"] },
+  { offset: 6, keys: ["senf", "mustard"] },
+  { offset: 7, keys: ["sesam", "sesamsamen", "sesame"] },
+  { offset: 8, keys: ["sulfit", "sulfite", "so2", "schwefeldioxid", "sulphur"] },
 ];
 
-function detectAllergens(result: QuidResult): Set<string> {
-  const found = new Set<string>();
-
-  // Use explicit allergen data if available
-  if (result.allergenDetails && result.allergenDetails.length > 0) {
-    result.allergenDetails.forEach((d: any) => {
-      ALLERGEN_KEYS.forEach((ak) => {
-        if (d.id === ak.deKey || d.id === ak.id) found.add(ak.id);
-      });
+// --- DeepL Translation ---
+async function translateWithDeepL(
+  text: string,
+  targetLang: string,
+  apiKey: string
+): Promise<string | null> {
+  try {
+    const response = await fetch(DEEPL_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        auth_key: apiKey,
+        text: text,
+        source_lang: "DE",
+        target_lang: targetLang.toUpperCase(),
+      }),
     });
-  } else if (result.allAllergens && result.allAllergens.length > 0) {
-    result.allAllergens.forEach((a: string) => {
-      ALLERGEN_KEYS.forEach((ak) => {
-        if (a.toLowerCase().includes(ak.deKey)) found.add(ak.id);
-      });
-    });
-  } else {
-    // Fallback: text search in label
-    const lower = result.labelText.toLowerCase();
-    ALLERGEN_KEYS.forEach((ak) => {
-      if (lower.includes(ak.deKey)) found.add(ak.id);
-    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.translations?.[0]?.text || null;
+  } catch (e) {
+    console.error("DeepL translation failed:", e);
+    return null;
   }
-  return found;
 }
 
+// --- Load Template ---
+async function loadTemplate(lang: SpecLanguage): Promise<ArrayBuffer> {
+  const filename = `spec-template-${lang}.xlsx`;
+
+  // Electron: load via IPC
+  if (window.electronAPI?.loadTemplate) {
+    const base64 = await window.electronAPI.loadTemplate(filename);
+    if (base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes.buffer;
+    }
+  }
+
+  // Browser fallback: fetch from public/templates/
+  const response = await fetch(`/templates/${filename}`);
+  if (!response.ok) throw new Error(`Template ${filename} not found`);
+  return response.arrayBuffer();
+}
+
+// --- Save Result ---
+async function saveResult(blob: Blob, filename: string): Promise<void> {
+  // Electron: use native save dialog
+  if (window.electronAPI?.saveXlsxToDisk) {
+    const reader = new FileReader();
+    const base64 = await new Promise<string>((resolve) => {
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result.split(",")[1]);
+      };
+      reader.readAsDataURL(blob);
+    });
+    await window.electronAPI.saveXlsxToDisk(base64, filename);
+    return;
+  }
+
+  // Browser fallback: download
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+// --- Main Export Function ---
 export async function generateSpecificationExcel(
   recipeName: string,
   result: QuidResult,
   recipe?: SavedRecipe,
-  lang: SpecLanguage = "de"
-) {
-  const L = LABELS[lang];
-  const fmt = (n: number, d: number = 1) =>
-    n.toLocaleString(lang === "de" ? "de-DE" : "en-US", {
-      minimumFractionDigits: d,
-      maximumFractionDigits: d,
-    });
-
-  const rows: any[][] = [];
-  const push = (...cells: any[]) => rows.push(cells);
-  const blank = () => rows.push([]);
-
-  // === HEADER ===
-  push(L.title);
-  blank();
-  push(L.validFrom, new Date().toLocaleDateString(lang === "de" ? "de-DE" : "en-GB"));
-  blank();
-  push(L.articleNumber, recipe?.articleNumber || "-");
-  push(L.articleName, recipeName);
-  blank();
-
-  // === RECIPE DETAILS ===
-  push(L.recipeDetails);
-  push(L.rawMass, `${fmt(result.totalRawMass, 3)} kg`);
-  push(L.endWeight, `${fmt(result.totalEndWeight, 3)} kg`);
-  if (recipe?.cookingLoss && recipe.cookingLoss > 0) {
-    push(L.cookingLoss, `${fmt(recipe.cookingLoss)} %`);
+  lang: SpecLanguage = "de",
+  options?: {
+    deeplApiKey?: string;
+    sensory?: {
+      appearance?: string;
+      texture?: string;
+      odor?: string;
+      taste?: string;
+    };
   }
-  push(L.meatContent, `${fmt(result.meatPercentage)} %`);
-  blank();
+) {
+  const map = CELL_MAP[lang];
+  const arrayBuffer = await loadTemplate(lang);
+  const workbook = await XlsxPopulate.fromDataAsync(arrayBuffer);
+  const sheet = workbook.sheet(0);
 
-  // === INGREDIENTS ===
-  push(L.ingredients);
-  push(result.labelText);
-  blank();
+  const set = (addr: string, val: string | number) => {
+    try { sheet.cell(addr).value(val); } catch (e) { console.warn(`Cell ${addr}:`, e); }
+  };
 
-  // === PROCESSING AIDS ===
-  push(L.processingAids);
+  const fmt = (n: number, d: number = 1) =>
+    n.toLocaleString("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  // --- Valid Date ---
+  const dateStr = new Date().toLocaleDateString(lang === "de" ? "de-DE" : "en-GB");
+  const validLabel = lang === "de"
+    ? `Spezifikation gültig ab ${dateStr}`
+    : `specification valid from ${dateStr}`;
+  set(map.validDate, validLabel);
+
+  // --- Article Info ---
+  set(map.articleNumber, recipe?.articleNumber || "");
+  set(map.articleName, recipeName);
+
+  // --- Ingredients / Label Text ---
+  let ingredientText = result.labelText;
+
+  // If English and DeepL key provided, translate the ingredient text
+  if (lang === "en" && options?.deeplApiKey && ingredientText) {
+    const translated = await translateWithDeepL(ingredientText, "EN", options.deeplApiKey);
+    if (translated) ingredientText = translated;
+  }
+
+  set(map.ingredients, ingredientText);
+
+  // --- Processing Aids ---
+  const maxAidSlots = 4;
+  for (let i = 0; i < maxAidSlots; i++) {
+    const row = map.aidStartRow + i;
+    set(`${map.aidNameCol}${row}`, i === 0 ? (lang === "de" ? "Keine" : "None") : "");
+    set(`${map.aidSourceCol}${row}`, i === 0 ? "-" : "");
+  }
+
   if (result.processingAidDetails && result.processingAidDetails.length > 0) {
-    push(L.aidName, L.aidSource);
-    result.processingAidDetails.forEach((d: any) => {
-      push(d.name, d.sources.join(", "));
+    result.processingAidDetails.forEach((detail: any, index: number) => {
+      if (index < maxAidSlots) {
+        const row = map.aidStartRow + index;
+        set(`${map.aidNameCol}${row}`, detail.name);
+        set(`${map.aidSourceCol}${row}`, detail.sources.join(", "));
+      }
+    });
+  }
+
+  // --- Sensory (if provided) ---
+  if (options?.sensory) {
+    if (options.sensory.appearance) set(map.sensoryAppearance, options.sensory.appearance);
+    if (options.sensory.texture) set(map.sensoryTexture, options.sensory.texture);
+    if (options.sensory.odor) set(map.sensoryOdor, options.sensory.odor);
+    if (options.sensory.taste) set(map.sensoryTaste, options.sensory.taste);
+  }
+
+  // --- Nutrition ---
+  set(map.nutritionEnergyKj, Math.round(result.nutritionPer100g.energyKj));
+  set(map.nutritionEnergyKcal, Math.round(result.nutritionPer100g.energyKcal));
+  set(map.nutritionFat, fmt(result.nutritionPer100g.fat));
+  set(map.nutritionSatFat, fmt(result.nutritionPer100g.saturatedFat));
+  set(map.nutritionCarbs, fmt(result.nutritionPer100g.carbohydrates));
+  set(map.nutritionSugar, fmt(result.nutritionPer100g.sugar));
+  set(map.nutritionProtein, fmt(result.nutritionPer100g.protein));
+  set(map.nutritionSalt, fmt(result.nutritionPer100g.salt, 2));
+
+  // --- Allergens ---
+  // Reset all allergen rows
+  for (let i = 0; i <= map.allergenEndRow - map.allergenStartRow; i++) {
+    const row = map.allergenStartRow + i;
+    set(`${map.allergenYesCol}${row}`, "");
+    set(`${map.allergenNoCol}${row}`, "X");
+    set(`${map.allergenSourceCol}${row}`, "");
+  }
+
+  // Detect and mark present allergens
+  const lowerLabel = result.labelText.toLowerCase();
+
+  if (result.allergenDetails && result.allergenDetails.length > 0) {
+    // Use explicit allergen data
+    result.allergenDetails.forEach((detail: any) => {
+      ALLERGEN_KEYS.forEach((ak) => {
+        if (ak.keys.some((k) => detail.id?.toLowerCase().includes(k))) {
+          const row = map.allergenStartRow + ak.offset;
+          set(`${map.allergenYesCol}${row}`, "X");
+          set(`${map.allergenNoCol}${row}`, "");
+          const current = sheet.cell(`${map.allergenSourceCol}${row}`).value();
+          const src = detail.sources.join(", ");
+          set(`${map.allergenSourceCol}${row}`, current ? `${current}, ${src}` : src);
+        }
+      });
+    });
+  } else if (result.allAllergens && result.allAllergens.length > 0) {
+    result.allAllergens.forEach((allergenKey: string) => {
+      ALLERGEN_KEYS.forEach((ak) => {
+        if (ak.keys.some((k) => allergenKey.toLowerCase().includes(k))) {
+          const row = map.allergenStartRow + ak.offset;
+          set(`${map.allergenYesCol}${row}`, "X");
+          set(`${map.allergenNoCol}${row}`, "");
+        }
+      });
     });
   } else {
-    push(L.none);
+    // Fallback: text search in label
+    ALLERGEN_KEYS.forEach((ak) => {
+      if (ak.keys.some((k) => lowerLabel.includes(k))) {
+        const row = map.allergenStartRow + ak.offset;
+        set(`${map.allergenYesCol}${row}`, "X");
+        set(`${map.allergenNoCol}${row}`, "");
+      }
+    });
   }
-  blank();
 
-  // === NUTRITION ===
-  push(L.nutrition);
-  push(L.parameter, L.per100g);
-  push(L.energy, `${Math.round(result.nutritionPer100g.energyKj)} kJ / ${Math.round(result.nutritionPer100g.energyKcal)} kcal`);
-  push(L.fat, `${fmt(result.nutritionPer100g.fat)} g`);
-  push(`  ${L.saturatedFat}`, `${fmt(result.nutritionPer100g.saturatedFat)} g`);
-  push(L.carbs, `${fmt(result.nutritionPer100g.carbohydrates)} g`);
-  push(`  ${L.sugar}`, `${fmt(result.nutritionPer100g.sugar)} g`);
-  push(L.protein, `${fmt(result.nutritionPer100g.protein)} g`);
-  push(L.salt, `${fmt(result.nutritionPer100g.salt, 2)} g`);
-  blank();
-  push(L.meatContent, `${fmt(result.meatPercentage)} %`);
-  push(L.water, `${fmt(result.nutritionPer100g.water || 0)} g`);
-  blank();
-
-  // === ALLERGENS ===
-  const detected = detectAllergens(result);
-  push(L.allergens);
-  push(L.allergenName, L.present, L.source);
-
-  ALLERGEN_KEYS.forEach((ak) => {
-    const isPresent = detected.has(ak.id);
-    let source = "";
-    if (isPresent && result.allergenDetails) {
-      const detail = result.allergenDetails.find(
-        (d: any) => d.id === ak.deKey || d.id === ak.id
-      );
-      if (detail) source = detail.sources.join(", ");
-    }
-    push(L[ak.id as keyof typeof L] || ak.id, isPresent ? L.yes : L.no, source);
-  });
-
-  // === BUILD WORKBOOK ===
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-
-  // Column widths
-  ws["!cols"] = [{ wch: 38 }, { wch: 45 }, { wch: 30 }];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, L.sheetName);
-
-  // Generate and download
+  // --- Generate output ---
+  const blob = await workbook.outputAsync();
   const safeName = recipeName.replace(/[^a-z0-9äöüß ]/gi, "_");
   const suffix = lang === "en" ? "Specification" : "Spezifikation";
-  XLSX.writeFile(wb, `${safeName}_${suffix}.xlsx`);
+  const filename = `${safeName}_${suffix}.xlsx`;
+
+  await saveResult(blob instanceof Blob ? blob : new Blob([blob]), filename);
 }
 
-// Re-export type for use in UI
-export type { SpecLanguage };
+// --- DeepL API Key Management ---
+const DEEPL_KEY_STORAGE = "quid-deepl-api-key";
+
+export function getDeepLApiKey(): string | null {
+  try {
+    return sessionStorage.getItem(DEEPL_KEY_STORAGE) || localStorage.getItem(DEEPL_KEY_STORAGE);
+  } catch { return null; }
+}
+
+export function setDeepLApiKey(key: string): void {
+  try {
+    sessionStorage.setItem(DEEPL_KEY_STORAGE, key);
+    localStorage.setItem(DEEPL_KEY_STORAGE, key);
+  } catch { /* ignore */ }
+}
