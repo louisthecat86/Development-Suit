@@ -2364,6 +2364,7 @@ export default function ProductDashboard() {
                                                         </Button>
                                                         <SpecExportButton
                                                             recipeName={activeProject.name}
+                                                            articleNumber={activeProject.articleNumber}
                                                             result={activeProject.latestResult}
                                                             recipe={activeProject.currentRecipe}
                                                             variant="default"

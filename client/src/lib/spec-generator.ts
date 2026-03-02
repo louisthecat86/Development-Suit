@@ -44,11 +44,11 @@ const CELL_MAP = {
   },
   en: {
     validDate: "J1",
-    articleNumber: "C5",
-    articleName: "C6",
-    unitWeight: "C7",
+    articleNumber: "D5",     // EN: label A5:C5, value D5:K5
+    articleName: "D6",       // EN: label A6:C6, value D6:K6
+    unitWeight: "D7",
     tolerance: "H7",
-    ingredients: "C8",       // merged C8:K11
+    ingredients: "D8",       // EN: label A8:C11, value D8:K11
     // Processing aids: C17-C20 (name), H17-H20 (source)
     aidStartRow: 17,
     aidNameCol: "C",
@@ -170,6 +170,7 @@ export async function generateSpecificationExcel(
   recipe?: SavedRecipe,
   lang: SpecLanguage = "de",
   options?: {
+    articleNumber?: string;
     deeplApiKey?: string;
     sensory?: {
       appearance?: string;
@@ -199,7 +200,7 @@ export async function generateSpecificationExcel(
   set(map.validDate, validLabel);
 
   // --- Article Info ---
-  set(map.articleNumber, recipe?.articleNumber || "");
+  set(map.articleNumber, options?.articleNumber || recipe?.articleNumber || "");
   set(map.articleName, recipeName);
 
   // --- Ingredients / Label Text ---

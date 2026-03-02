@@ -45,6 +45,7 @@ const JSON_FILE_MAP: Record<string, string> = {
   "quid-custom-flows": "custom-flows.json",
   "quid-first-visit-done": "settings.json",
   "quid-landing-seen": "landing-seen.json",
+  "quid-deepl-api-key": "deepl-key.json",
 };
 
 // Write-through cache to avoid async issues with synchronous localStorage API

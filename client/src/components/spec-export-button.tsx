@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 
 interface SpecExportButtonProps {
   recipeName: string;
+  articleNumber?: string;
   result: QuidResult | null | undefined;
   recipe?: SavedRecipe;
   sensory?: {
@@ -37,7 +38,7 @@ interface SpecExportButtonProps {
 }
 
 export function SpecExportButton({
-  recipeName, result, recipe, sensory,
+  recipeName, articleNumber, result, recipe, sensory,
   variant = "default", size = "sm", className = "",
 }: SpecExportButtonProps) {
   const { toast } = useToast();
@@ -54,6 +55,7 @@ export function SpecExportButton({
     try {
       const deeplApiKey = lang === "en" ? (getDeepLApiKey() || undefined) : undefined;
       await generateSpecificationExcel(recipeName, result, recipe, lang, {
+        articleNumber,
         deeplApiKey,
         sensory,
       });
