@@ -1,4 +1,4 @@
-import { getData, setData } from "@/lib/electron-storage";
+import { getData, setData, setDataAsync, isElectron } from "@/lib/electron-storage";
 import React, { useRef, useState } from "react";
 import { Download, Upload, Database, Settings, FileSpreadsheet, Lock, Unlock, Search, ChefHat, Archive, FolderOpen, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,7 @@ export function IngredientPicker({ onSelect }: { onSelect: (ing: LibraryIngredie
       const storedIng = getData("quid-ingredient-db-clean");
       if (storedIng) {
         try {
-          const parsed = JSON.parse(storedIng);
+          const parsed = Array.isArray(storedIng) ? storedIng : JSON.parse(storedIng);
           setIngredients(parsed.sort((a: any, b: any) => a.name.localeCompare(b.name)));
         } catch (e) { console.error(e); }
       }
@@ -189,7 +189,7 @@ export function DataManagement() {
   const getProjects = () => {
       try {
           const data = getData("quid-projects-db-clean");
-          return data ? JSON.parse(data) : [];
+          return data ? data : [];
       } catch (e) { return []; }
   };
 
@@ -236,7 +236,7 @@ export function DataManagement() {
       // 3. Readable Folder Structure (Customers -> Projects)
       const customersFolder = zip.folder("Kunden");
       
-      projectsToBackup.forEach((project: any) => {
+      for (const project of projectsToBackup) {
           const customerName = project.customer || "Allgemein";
           const safeCustomerName = customerName.replace(/[^a-z0-9äöüß \-]/gi, '_');
           const safeProjectName = project.name.replace(/[^a-z0-9äöüß \-]/gi, '_');
@@ -252,34 +252,49 @@ export function DataManagement() {
 
               // Timeline Attachments
               const filesFolder = projectFolder.folder("Dateien");
-              project.timeline?.forEach((event: any) => {
-                  if (event.attachment && event.attachmentContent) {
-                      let content: string | Blob = event.attachmentContent;
-                      
-                      // Convert base64 to blob
-                      if (typeof content === 'string' && content.startsWith('data:')) {
+              for (const event of (project.timeline || [])) {
+                  if (event.attachment) {
+                      // Electron: load from file system via path
+                      if (isElectron() && window.electronAPI && event.attachmentPath) {
                           try {
-                              const arr = content.split(',');
-                              const mimeMatch = arr[0].match(/:(.*?);/);
-                              if (mimeMatch) {
+                              const fileInfo = await window.electronAPI.loadProjectFile(event.attachmentPath);
+                              if (fileInfo) {
+                                  // Convert data URL to binary
+                                  const arr = fileInfo.data.split(',');
                                   const bstr = atob(arr[1]);
                                   let n = bstr.length;
                                   const u8arr = new Uint8Array(n);
-                                  while(n--){
-                                      u8arr[n] = bstr.charCodeAt(n);
-                                  }
-                                  content = new Blob([u8arr], {type: mimeMatch[1]});
+                                  while(n--){ u8arr[n] = bstr.charCodeAt(n); }
+                                  filesFolder?.file(event.attachment, u8arr);
                               }
                           } catch (e) {
-                              console.error("Failed to convert base64 to blob for backup", e);
+                              console.error("Failed to load file for backup:", event.attachment, e);
                           }
                       }
-                      
-                      filesFolder?.file(event.attachment, content);
+                      // Browser/legacy: base64 content inline
+                      else if (event.attachmentContent) {
+                          let content: string | Blob = event.attachmentContent;
+                          if (typeof content === 'string' && content.startsWith('data:')) {
+                              try {
+                                  const arr = content.split(',');
+                                  const mimeMatch = arr[0].match(/:(.*?);/);
+                                  if (mimeMatch) {
+                                      const bstr = atob(arr[1]);
+                                      let n = bstr.length;
+                                      const u8arr = new Uint8Array(n);
+                                      while(n--){ u8arr[n] = bstr.charCodeAt(n); }
+                                      content = new Blob([u8arr], {type: mimeMatch[1]});
+                                  }
+                              } catch (e) {
+                                  console.error("Failed to convert base64 to blob for backup", e);
+                              }
+                          }
+                          filesFolder?.file(event.attachment, content);
+                      }
                   }
-              });
+              }
           }
-      });
+      }
 
       const content = await zip.generateAsync({ 
           type: "blob",
@@ -357,7 +372,34 @@ export function DataManagement() {
                   const projectsFile = zip.file("projects.json");
                   if (projectsFile) {
                       const content = await projectsFile.async("string");
-                      setData("quid-projects-db-clean", JSON.parse(content));
+                      let projects = JSON.parse(content);
+
+                      // In Electron: check if projects have base64 attachmentContent
+                      // and save those files to disk, replacing with file paths
+                      if (isElectron() && window.electronAPI) {
+                          for (const project of projects) {
+                              const customer = project.customer || "Allgemein";
+                              const projectName = project.name || "Unbenannt";
+                              
+                              if (project.timeline) {
+                                  for (const event of project.timeline) {
+                                      if (event.attachmentContent && event.attachment) {
+                                          // Save base64 content as file
+                                          const relPath = await window.electronAPI.saveProjectFile(
+                                              customer, projectName, event.attachment, event.attachmentContent
+                                          );
+                                          if (relPath) {
+                                              // Replace base64 with file path
+                                              event.attachmentPath = relPath;
+                                              delete event.attachmentContent;
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+
+                      await setDataAsync("quid-projects-db-clean", projects);
                       restoredCount++;
                   }
 
@@ -365,7 +407,7 @@ export function DataManagement() {
                   const ingredientsFile = zip.file("ingredients.json");
                   if (ingredientsFile) {
                       const content = await ingredientsFile.async("string");
-                      setData("quid-ingredient-db-clean", JSON.parse(content));
+                      await setDataAsync("quid-ingredient-db-clean", JSON.parse(content));
                       window.dispatchEvent(new Event("storage-update"));
                       restoredCount++;
                   }
@@ -374,14 +416,32 @@ export function DataManagement() {
                   const recipesFile = zip.file("recipes.json");
                   if (recipesFile) {
                       const content = await recipesFile.async("string");
-                      setData("quid-recipe-db-clean", JSON.parse(content));
+                      await setDataAsync("quid-recipe-db-clean", JSON.parse(content));
                       window.dispatchEvent(new Event("recipe-storage-update"));
                       restoredCount++;
                   }
 
+                  // In Electron: also restore files from Kunden/ folder
+                  if (isElectron() && window.electronAPI) {
+                      const kundenFiles = Object.keys(zip.files).filter(
+                          f => f.startsWith("Kunden/") && !zip.files[f].dir
+                      );
+                      for (const filePath of kundenFiles) {
+                          try {
+                              const fileData = await zip.files[filePath].async("base64");
+                              await window.electronAPI.writeFileBase64(filePath, fileData);
+                          } catch (err) {
+                              console.error("Failed to restore file:", filePath, err);
+                          }
+                      }
+                      if (kundenFiles.length > 0) {
+                          console.log(`Restored ${kundenFiles.length} files from Kunden/ folder`);
+                      }
+                  }
+
                   if (restoredCount > 0) {
-                       toast({ title: "Backup wiederhergestellt", description: "System wird aktualisiert..." });
-                       setTimeout(() => window.location.reload(), 1000);
+                       toast({ title: "Backup wiederhergestellt", description: `${restoredCount} Datensätze importiert. System wird aktualisiert...` });
+                       setTimeout(() => window.location.reload(), 500);
                   } else {
                       toast({ title: "Fehler", description: "Keine gültigen Daten im ZIP gefunden.", variant: "destructive" });
                   }
@@ -394,7 +454,7 @@ export function DataManagement() {
       } 
       // Handle JSON (Legacy or Single File)
       else {
-          reader.onload = (evt) => {
+          reader.onload = async (evt) => {
               try {
                   const json = JSON.parse(evt.target?.result as string);
                   
@@ -404,21 +464,21 @@ export function DataManagement() {
                       if (json.length > 0 && json[0].isMeat !== undefined) {
                           // Ingredients
                           if(confirm(`Möchten Sie ${json.length} Zutaten importieren?`)) {
-                              setData("quid-ingredient-db-clean", json);
+                              await setDataAsync("quid-ingredient-db-clean", json);
                               window.dispatchEvent(new Event("storage-update"));
                               toast({ title: "Zutaten importiert" });
                           }
                       } else if (json.length > 0 && json[0].cookingLoss !== undefined) {
                           // Recipes
                           if(confirm(`Möchten Sie ${json.length} Rezepte importieren?`)) {
-                              setData("quid-recipe-db-clean", json);
+                              await setDataAsync("quid-recipe-db-clean", json);
                               window.dispatchEvent(new Event("recipe-storage-update"));
                               toast({ title: "Rezepte importiert" });
                           }
                       } else {
                           // Assume Projects
                           if(confirm(`Möchten Sie ${json.length} Projekte importieren?`)) {
-                              setData("quid-projects-db-clean", json);
+                              await setDataAsync("quid-projects-db-clean", json);
                               window.location.reload();
                           }
                       }

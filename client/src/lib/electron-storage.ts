@@ -94,6 +94,26 @@ export function setData(key: string, data: any): void {
   }
 }
 
+/** Set data and WAIT for disk write to complete (use for imports/batch operations) */
+export async function setDataAsync(key: string, data: any): Promise<boolean> {
+  if (isElectron()) {
+    memoryCache[key] = data;
+    const filename = JSON_FILE_MAP[key];
+    if (filename) {
+      try {
+        return await window.electronAPI!.writeJSON(filename, data);
+      } catch (err) {
+        console.error(`Failed to persist ${filename}:`, err);
+        return false;
+      }
+    }
+    return true;
+  } else {
+    localStorage.setItem(key, JSON.stringify(data));
+    return true;
+  }
+}
+
 /** Get string value (for simple flags like first-visit) */
 export function getItem(key: string): string | null {
   if (isElectron()) {
