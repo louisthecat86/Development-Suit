@@ -2370,7 +2370,7 @@ export default function ProductDashboard() {
                                                             size="sm"
                                                             className="w-full text-xs bg-purple-600 hover:bg-purple-700 text-white"
                                                         />
-
+                                                    </div>
                                                     {activeProject.latestResult && activeProject.latestResult.warnings.length > 0 && (
                                                         <div className="mt-4 pt-3 border-t border-slate-100">
                                                             {activeProject.latestResult.warnings.map((w, i) => (
