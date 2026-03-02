@@ -1,4 +1,5 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Router as WouterRouter } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -13,20 +14,22 @@ import QuidCalculator from "@/pages/quid-calculator";
 import LabelDesigner from "@/pages/label-designer";
 import StatisticsPage from "@/pages/statistics";
 
-function Router() {
+function AppRouter() {
   return (
-    <Layout>
-      <Switch>
-        <Route path="/" component={ProductDashboard} />
-        <Route path="/recipes" component={RecipeDatabase} />
-        <Route path="/ingredients" component={IngredientDatabase} />
-        <Route path="/statistics" component={StatisticsPage} />
-        <Route path="/reverser" component={RecipeReverser} />
-        <Route path="/quid-calculator" component={QuidCalculator} />
-        <Route path="/label-designer" component={LabelDesigner} />
-        <Route component={NotFound} />
-      </Switch>
-    </Layout>
+    <WouterRouter hook={useHashLocation}>
+      <Layout>
+        <Switch>
+          <Route path="/" component={ProductDashboard} />
+          <Route path="/recipes" component={RecipeDatabase} />
+          <Route path="/ingredients" component={IngredientDatabase} />
+          <Route path="/statistics" component={StatisticsPage} />
+          <Route path="/reverser" component={RecipeReverser} />
+          <Route path="/quid-calculator" component={QuidCalculator} />
+          <Route path="/label-designer" component={LabelDesigner} />
+          <Route component={NotFound} />
+        </Switch>
+      </Layout>
+    </WouterRouter>
   );
 }
 
@@ -35,7 +38,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
-        <Router />
+        <AppRouter />
       </TooltipProvider>
     </QueryClientProvider>
   );
