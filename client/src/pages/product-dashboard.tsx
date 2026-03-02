@@ -1226,7 +1226,7 @@ export default function ProductDashboard() {
             setCurrentImageIndex(0);
             setShowImageGallery(true);
         } else {
-             toast({ title: "Keine Bilder", description: "In diesem Projekt wurden noch keine Bilder gefunden.", variant: "secondary" });
+             toast({ title: "Keine Bilder", description: "In diesem Projekt wurden noch keine Bilder gefunden.", variant: "default" });
         }
     };
 
