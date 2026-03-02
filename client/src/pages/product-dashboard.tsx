@@ -1,885 +1,3295 @@
-import { getData, setData, getItem, setItem } from "@/lib/electron-storage";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { LandingPage } from "@/pages/landing-page";
+import { Link, useLocation } from "wouter";
+import { useDropzone } from 'react-dropzone';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-  DialogFooter, DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuTrigger, DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import {
-  Plus, Search, Trash2, ArrowLeft, Save, FileText, Settings,
-  Calendar, ChefHat, ShieldCheck, Eye, Package, MoreVertical,
-  CheckCircle2, Clock, Archive, Upload, Clipboard, Image as ImageIcon,
-  Download, Edit, LayoutDashboard, AlertTriangle, PlayCircle,
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
+import { 
+  Activity, FileText, Mail, FlaskConical, CheckCircle2, AlertCircle, 
+  Plus, Calendar as CalendarIcon, UploadCloud, Download, Upload, 
+  FolderOpen, Search, Trash2, Clock, Briefcase, ArrowRight, Save, LayoutGrid, List, Edit, AlertTriangle, Copy, FileSpreadsheet,
+  Languages, ArrowLeftRight, Archive, MoreVertical, ChefHat, Check, X, Settings, CheckSquare, MessageSquare, Eye, Ruler, Image as ImageIcon, ChevronLeft, ChevronRight, History, Database, Cloud
 } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { ProjectRecipeEditor } from "@/components/project-recipe-editor";
-import { ProcessParametersEditor, ProcessSettings, DEFAULT_PROCESS_SETTINGS } from "@/components/process-parameters-editor";
-import { FmeaEditor, FmeaData } from "@/components/fmea-editor";
-import { DataManagement } from "@/components/data-management";
-import { LandingPage } from "@/pages/landing-page";
 import { SavedRecipe } from "@/lib/recipe-db";
 import { QuidResult } from "@/lib/quid-calculator";
-import { generateProjectPDF } from "@/lib/pdf-generator";
+import { ProjectRecipeEditor } from "@/components/project-recipe-editor";
 import { RecipeComparison } from "@/components/recipe-comparison";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, 
+  DialogHeader, DialogTitle, DialogTrigger
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { generateSpecificationExcel } from "@/lib/spec-generator";
+import { generateProjectPDF } from "@/lib/pdf-generator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+
+import { FmeaEditor, FmeaData } from "@/components/fmea-editor";
+
+// Helper for Nutrition Rows
+function NutriRow({ label, value, unit, indent, color }: { label: string, value: number, unit: string, indent?: boolean, color?: string }) {
+    return (
+        <div className={`flex justify-between items-center py-2 border-b border-slate-50 last:border-0 ${indent ? "pl-4 text-muted-foreground text-sm" : "text-sm"} ${color || ""}`}>
+            <span>{label}</span>
+            <span className="font-mono font-medium">{value.toFixed(1)} {unit}</span>
+        </div>
+    );
+}
+
+import { ProcessParametersEditor, ProcessSettings, DEFAULT_PROCESS_SETTINGS } from "@/components/process-parameters-editor";
 import { ProcessComparison } from "@/components/process-comparison";
 
-// --- Types ---
-type ProjectStatus = "development" | "validation" | "production" | "archived";
-
-interface TimelineEvent {
-  id: number;
-  type: "milestone" | "recipe" | "email" | "parameter" | "file" | "note";
-  title: string;
-  date: string;
-  status: "completed" | "received" | "ok" | "pending";
-  user?: string;
-  attachment?: string;
-  attachmentType?: string;
-  attachmentContent?: string;
-}
-
-interface Sensory {
-  appearance?: string;
-  odor?: string;
-  taste?: string;
-  texture?: string;
-  dimensions?: {
-    length?: string;
-    diameter?: string;
-    weight?: string;
-  };
-  preparation?: string;
-}
-
-interface Checklist {
-  articleCreated: boolean;
-  recipeCreated: boolean;
-  labelCreated: boolean;
-  nutritionCreated: boolean;
-  specCreated: boolean;
-  processCreated: boolean;
-  navisionCreated: boolean;
-}
+// Types
+type TimelineEvent = {
+    id: number;
+    type: 'milestone' | 'recipe' | 'email' | 'parameter' | 'file';
+    title: string;
+    date: string;
+    user: string;
+    description: string;
+    status: 'completed' | 'received' | 'ok' | 'pending';
+    changes?: string[];
+    value?: string;
+    target?: string;
+    attachment?: string;
+    attachmentType?: string; // MIME type or extension
+    attachmentContent?: string; // Base64 content (mockup)
+    comments?: { id: number, user: string, text: string, date: string }[]; // NEW: Comments
+};
 
 interface Project {
-  id: string;
-  name: string;
-  articleNumber?: string;
-  status: ProjectStatus;
-  customer?: string;
-  createdAt: string;
-  updatedAt: string;
-  timeline: TimelineEvent[];
-  currentRecipe?: SavedRecipe;
-  latestResult?: QuidResult;
-  processFlow?: string;
-  isNewProcess?: boolean;
-  riskAnalysis?: string;
-  fmeaData?: FmeaData;
-  sensory?: Sensory;
-  processSettings?: ProcessSettings;
-  checklist?: Checklist;
-  productIdea?: string;
-  productImage?: string;
-  customerAgreements?: string;
-  notes?: string;
+    id: string;
+    name: string;
+    articleNumber?: string;
+    status: 'development' | 'validation' | 'production' | 'archived';
+    customer?: string; // New Customer field
+    createdAt: string;
+    updatedAt: string;
+    timeline: TimelineEvent[];
+    currentRecipe?: SavedRecipe; 
+    latestResult?: QuidResult; // Cache the result
+    processSettings?: ProcessSettings; // NEW: Process Parameters
+    processHistory?: {
+        version: string;
+        date: string;
+        user: string;
+        note: string;
+        settings: ProcessSettings;
+    }[];
+    productIdea?: string; // NEW: Description of product idea
+    productImage?: string; // NEW: Product Image (Base64)
+    customerAgreements?: string; // NEW: Special customer agreements
+    processFlow?: string; // NEW: Standard flow diagram ID
+    isNewProcess?: boolean; // NEW: Triggers FMEA
+    hasNewIngredients?: boolean; // NEW: Triggers QA check
+    newIngredientDetails?: string; // NEW: Details about the new ingredient
+    riskAnalysis?: string; // Deprecated: Simple FMEA text
+    fmeaData?: FmeaData; // NEW: Structured FMEA Data
+    sensory?: { // NEW: Sensory Analysis
+        appearance?: string;
+        odor?: string;
+        taste?: string;
+        texture?: string;
+        dimensions?: {
+            length?: string;
+            diameter?: string;
+            weight?: string;
+        };
+        preparation?: string;
+    };
+    checklist?: {
+        articleCreated: boolean;
+        recipeCreated: boolean;
+        labelCreated: boolean;
+        nutritionCreated: boolean;
+        specCreated: boolean;
+        processCreated: boolean;
+        navisionCreated: boolean;
+        sensoryCreated?: boolean;
+    };
+    labelChecklist?: { // NEW: Detailed Label Checklist
+        name: boolean;
+        ingredients: boolean;
+        allergens: boolean;
+        quantity: boolean;
+        netWeight: boolean;
+        bestBefore: boolean;
+        storage: boolean;
+        address: boolean;
+        origin: boolean;
+        instructions: boolean;
+        nutrition: boolean;
+        gas: boolean;
+    };
+    parameters: {
+        fatTarget?: number;
+        proteinTarget?: number;
+        awLimit?: number;
+    };
+    notes?: string;
 }
 
-const STORAGE_KEY = "quid-projects-db-clean";
-const FIRST_VISIT_KEY = "quid-first-visit-done";
+const PROJECT_STORAGE_KEY = "quid-projects-db-clean";
 
-// Flow Diagrams List
-const FLOW_DIAGRAMS = [
-  { id: "FD_001", label: "FD_001 Fließdiagramm Gewürze und Hilfsstoffe" },
-  { id: "FD_002", label: "FD_002 Fließdiagramm Auftauen gefrorenes Fleisch" },
-  { id: "FD_003", label: "FD_003 Fließdiagramm Fleischteilstücke" },
-  { id: "FD_004", label: "FD_004 Fließdiagramm rohe Fleischprodukte" },
-  { id: "FD_005", label: "FD_005 Fließdiagramm gegarte Fleischprodukte" },
-  { id: "FD_006", label: "FD_006 Fließdiagramm Roh- und Kochpökelwaren" },
-  { id: "FD_007", label: "FD_007 Fließdiagramm Brüh- und Kochwurst (Kaliberware)" },
-  { id: "FD_008", label: "FD_008 Fließdiagramm geschnittene Wurst- und Bratenartikel" },
-  { id: "FD_009", label: "FD_009 Fließdiagramm Bratstraßenartikel natur/grundgewürzt" },
-  { id: "FD_010", label: "FD_010 Fließdiagramm Piccata" },
-  { id: "FD_011", label: "FD_011 Fließdiagramm Bratstraßenartikel paniert" },
-  { id: "FD_012", label: "FD_012 Fließdiagramm Bratstraßenartikel mariniert" },
-  { id: "FD_013", label: "FD_013 Fließdiagramm Bratstraßenartikel gefüllt" },
-  { id: "FD_014", label: "FD_014 Fließdiagramm Bratstraßenartikel gefüllt, paniert" },
-  { id: "FD_015", label: "FD_015 Fließdiagramm Bratstraßenartikel belegt" },
-  { id: "FD_016", label: "FD_016 Fließdiagramm Kochwurst Kaliberware" },
-  { id: "FD_017", label: "FD_017 Fließdiagramm Handelsware" },
-  { id: "FD_018", label: "FD_018 Fließdiagramm Suppen und Saucen" },
+const STANDARD_FLOW_DIAGRAMS = [
+    { id: "FD_001", label: "FD_001 Fließdiagramm Gewürze und Hilfsstoffe" },
+    { id: "FD_002", label: "FD_002 Fließdiagramm Auftauen gefrorenes Fleisch" },
+    { id: "FD_003", label: "FD_003 Fließdiagramm Fleischteilstücke" },
+    { id: "FD_004", label: "FD_004 Fließdiagramm rohe Fleischprodukte" },
+    { id: "FD_005", label: "FD_005 Fließdiagramm gegarte Fleischprodukte" },
+    { id: "FD_006", label: "FD_006 Fließdiagramm Roh- und Kochpökelwaren" },
+    { id: "FD_007", label: "FD_007 Fließdiagramm Brüh- und Kochwurst (Kaliberware)" },
+    { id: "FD_008", label: "FD_008 Fließdiagramm geschnittene Wurst- und Bratenartikel" },
+    { id: "FD_009", label: "FD_009 Fließdiagramm Bratstraßenartikel natur/grundgewürzt" },
+    { id: "FD_010", label: "FD_010 Fließdiagramm Piccata" },
+    { id: "FD_011", label: "FD_011 Fließdiagramm Bratstraßenartikel paniert" },
+    { id: "FD_012", label: "FD_012 Fließdiagramm Bratstraßenartikel mariniert" },
+    { id: "FD_013", label: "FD_013 Fließdiagramm Bratstraßenartikel gefüllt" },
+    { id: "FD_014", label: "FD_014 Fließdiagramm Bratstraßenartikel gefüllt, paniert" },
+    { id: "FD_015", label: "FD_015 Fließdiagramm Bratstraßenartikel belegt" },
+    { id: "FD_016", label: "FD_016 Fließdiagramm Kochwurst Kaliberware" },
+    { id: "FD_017", label: "FD_017 Fließdiagramm Handelsware" },
+    { id: "FD_018", label: "FD_018 Fließdiagramm Suppen und Saucen" },
+    { id: "FD_019", label: "FD_019 Fließdiagramm Zollware Bratstraßenartikel" },
+    { id: "FD_020", label: "FD_020 Fließdiagramm Bratstraßenartikel gebraten Kruste" },
+    { id: "FD_021", label: "FD_021 Fließdiagramm Gefüllte Paprika" },
+    { id: "FD_022", label: "FD_022 Fließdiagramm Brühwürstchen" },
+    { id: "FD_023", label: "FD_023 Fließdiagramm Krautwickel TK" },
+    { id: "FD_024", label: "FD_024 Fließdiagramm Sous vide gegarte Fleischware" },
+    { id: "FD_025", label: "FD_025 Fließdiagramm Vegetarische Artikel paniert roh, TK" },
+    { id: "FD_026", label: "FD_026 Fließdiagramm Vegetarisch Taler/ Bällchen roh, TK" },
+    { id: "FD_027", label: "FD_027 Fließdiagramm Vegetarisch Taler/ Bällchen paniert, roh, TK" },
+    { id: "FD_028", label: "FD_028 Fließdiagramm Sülze, Kaliberware" },
+    { id: "FD_029", label: "FD_029 Fließdiagramm gekochte Fleischartikel geschnitten TK" },
+    { id: "FD_030", label: "FD_030 Fließdiagramm Vegetarische Artikel mit Topping, roh, TK" },
+    { id: "FD_031", label: "FD_031 Fließdiagramm Vegetarische Artikel mariniert, roh, TK" },
+    { id: "FD_032", label: "FD_032 Fließdiagramm Kommissionierung" },
+    { id: "FD_033", label: "FD_033 Fließdiagramm Fleischkäse" },
+    { id: "FD_034", label: "FD_034 Fließdiagramm Zukaufware Spieße gebraten" },
+    { id: "FD_035", label: "FD_035 Fließdiagramm Vegetarisches Produkt in Form gegart, TK" },
+    { id: "FD_036", label: "FD_036 Fließdiagramm Brühwurst geschnitten, gebraten, TK" },
+    { id: "FD_037", label: "FD_037 Fließdiagramm Rohe Wurst TK" },
+    { id: "FD_038", label: "FD_038 Fließdiagramm Brühwurst in geschnittene Kaliberware gewickelt" },
+    { id: "FD_039", label: "FD_039 Fließdiagramm Teilstücke gebräunt, sous vide gegart" },
+    { id: "FD_040", label: "FD_040 Fließdiagramm Gefüllte Paprika gegart" },
+    { id: "FD_042", label: "FD_042 Fließdiagramm Rohpökelwaren (mit Ummantelung) Stückware" },
+    { id: "FD_043", label: "FD_043 Fließdiagramm Vegetarische Bällchen-Taler, gebraten-gegart" },
+    { id: "FD_044", label: "FD_044 Fließdiagramm Rohwurst kaltgeräuchert frisch/TK" },
+    { id: "FD_045", label: "FD_045 Wareneingang und Kühllagerung" },
+    { id: "FD_046", label: "FD_046 Fließdiagramm Bratstraßenartikel gewolft" },
+    { id: "FD_047", label: "FD_047 Teilstücke gebräunt, sous vide gegart, gesiebt" },
+    { id: "FD_048", label: "FD_048 Vegetarisches Produkt geschnitten" },
+    { id: "FD_049", label: "FD_049 Nachpasteurisierung verzehrfertiger Produkte" }
 ];
 
-const DEFAULT_CHECKLIST: Checklist = {
-  articleCreated: false,
-  recipeCreated: false,
-  labelCreated: false,
-  nutritionCreated: false,
-  specCreated: false,
-  processCreated: false,
-  navisionCreated: false,
-};
-
-const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  development: { label: "Entwicklung", color: "bg-blue-100 text-blue-800", icon: <Settings className="w-3 h-3" /> },
-  validation: { label: "Validierung", color: "bg-yellow-100 text-yellow-800", icon: <Clock className="w-3 h-3" /> },
-  production: { label: "Produktion", color: "bg-green-100 text-green-800", icon: <CheckCircle2 className="w-3 h-3" /> },
-  archived: { label: "Archiv", color: "bg-gray-100 text-gray-600", icon: <Archive className="w-3 h-3" /> },
-};
-
-// --- Helper Functions ---
-function loadProjects(): Project[] {
-  try {
-    const data = getData(STORAGE_KEY);
-    return data || [];
-  } catch { return []; }
-}
-
-function saveProjects(projects: Project[]) {
-  setData(STORAGE_KEY, projects);
-  window.dispatchEvent(new Event("projects-storage-update"));
-}
-
-function createNewProject(name: string, customer?: string): Project {
-  return {
-    id: crypto.randomUUID(),
-    name,
-    status: "development",
-    customer: customer || "",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    timeline: [{
-      id: 1,
-      type: "milestone",
-      title: "Projekt erstellt",
-      date: new Date().toISOString(),
-      status: "completed",
-      user: "System",
-    }],
-    checklist: { ...DEFAULT_CHECKLIST },
-  };
-}
-
-// --- Main Component ---
 export default function ProductDashboard() {
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // State
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [showNewDialog, setShowNewDialog] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newCustomer, setNewCustomer] = useState("");
-  const [showLanding, setShowLanding] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [customFlowDiagrams, setCustomFlowDiagrams] = useState<{id: string, label: string}[]>([]);
+  const [showAddFlowDialog, setShowAddFlowDialog] = useState(false);
+  const [newFlowName, setNewFlowName] = useState("");
+  
+  // Backup State
+  const [showBackupDialog, setShowBackupDialog] = useState(false);
+  const [backupOptions, setBackupOptions] = useState({ includeArchived: false, onlyArchived: false });
 
-  // Snapshot comparison state
-  const [showRecipeComparison, setShowRecipeComparison] = useState(false);
-  const [comparisonRecipes, setComparisonRecipes] = useState<{ old: SavedRecipe; new: SavedRecipe } | null>(null);
-  const [showProcessComparison, setShowProcessComparison] = useState(false);
-  const [comparisonProcess, setComparisonProcess] = useState<{ old: ProcessSettings; new: ProcessSettings } | null>(null);
-
-  // Load projects on mount
+  // Load custom flow diagrams
   useEffect(() => {
-    const loaded = loadProjects();
-    setProjects(loaded);
-    
-    const firstVisitDone = getItem(FIRST_VISIT_KEY);
-    if (!firstVisitDone && loaded.length === 0) {
-      setShowLanding(true);
-    }
+      const stored = localStorage.getItem("quid-custom-flows");
+      if(stored) {
+          try {
+              setCustomFlowDiagrams(JSON.parse(stored));
+          } catch(e) {
+              console.error("Failed to load custom flows", e);
+          }
+      }
   }, []);
 
-  // Listen for external storage changes
-  useEffect(() => {
-    const handler = () => setProjects(loadProjects());
-    window.addEventListener("projects-storage-update", handler);
-    return () => window.removeEventListener("projects-storage-update", handler);
-  }, []);
-
-  const handleLandingStart = () => {
-    setItem(FIRST_VISIT_KEY, "true");
-    setShowLanding(false);
+  const handleAddCustomFlow = () => {
+      if(!newFlowName.trim()) return;
+      
+      // Determine next ID
+      // Basic check for existing IDs in standard
+      const allIds = [...STANDARD_FLOW_DIAGRAMS, ...customFlowDiagrams].map(f => f.id);
+      let nextNum = 50;
+      // Find highest number
+      allIds.forEach(id => {
+          const match = id.match(/FD_(\d+)/);
+          if(match) {
+              const num = parseInt(match[1]);
+              if(num >= nextNum) nextNum = num + 1;
+          }
+      });
+      
+      const newId = `FD_${nextNum.toString().padStart(3, '0')}`;
+      const newFlow = { id: newId, label: `${newId} ${newFlowName}` };
+      
+      const updated = [...customFlowDiagrams, newFlow];
+      setCustomFlowDiagrams(updated);
+      localStorage.setItem("quid-custom-flows", JSON.stringify(updated));
+      
+      setNewFlowName("");
+      setShowAddFlowDialog(false);
+      
+      toast({ title: "Fließdiagramm angelegt", description: `${newFlow.label} wurde hinzugefügt.` });
   };
-
-  const handleLandingImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Import is handled by DataManagement component
-    setItem(FIRST_VISIT_KEY, "true");
-    setShowLanding(false);
-    setTimeout(() => setProjects(loadProjects()), 500);
-  };
-
-  // --- CRUD ---
-  const updateProject = useCallback((updated: Project) => {
-    updated.updatedAt = new Date().toISOString();
-    setProjects(prev => {
-      const next = prev.map(p => p.id === updated.id ? updated : p);
-      saveProjects(next);
-      return next;
-    });
-    setSelectedProject(updated);
-  }, []);
-
-  const handleCreateProject = () => {
-    if (!newName.trim()) {
-      toast({ title: "Fehler", description: "Bitte einen Projektnamen eingeben.", variant: "destructive" });
-      return;
-    }
-    const p = createNewProject(newName.trim(), newCustomer.trim());
-    const next = [...projects, p];
-    saveProjects(next);
-    setProjects(next);
-    setNewName("");
-    setNewCustomer("");
-    setShowNewDialog(false);
-    setSelectedProject(p);
-    toast({ title: "Projekt erstellt", description: `"${p.name}" wurde angelegt.` });
-  };
-
-  const handleDeleteProject = (id: string) => {
-    if (!confirm("Projekt wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.")) return;
-    const next = projects.filter(p => p.id !== id);
-    saveProjects(next);
-    setProjects(next);
-    if (selectedProject?.id === id) setSelectedProject(null);
-    toast({ title: "Gelöscht", variant: "destructive" });
-  };
-
-  const handleArchiveProject = (project: Project) => {
-    const updated = { ...project, status: "archived" as ProjectStatus };
-    addTimelineEvent(updated, "milestone", "Projekt archiviert");
-    updateProject(updated);
-    toast({ title: "Archiviert", description: `"${project.name}" wurde archiviert.` });
-  };
-
-  // --- Timeline ---
-  const addTimelineEvent = (project: Project, type: TimelineEvent["type"], title: string) => {
-    project.timeline = [
-      ...project.timeline,
-      {
-        id: Date.now(),
-        type,
-        title,
-        date: new Date().toISOString(),
-        status: "completed",
-        user: "Benutzer",
-      },
-    ];
-  };
-
-  // --- Recipe Save Handler ---
-  const handleRecipeSave = (recipe: SavedRecipe, result: QuidResult | null, createSnapshot?: boolean) => {
-    if (!selectedProject) return;
-    const updated = { ...selectedProject };
-    
-    if (createSnapshot && updated.currentRecipe) {
-      addTimelineEvent(updated, "recipe", `Rezeptur-Snapshot: ${recipe.name}`);
-    }
-    
-    updated.currentRecipe = recipe;
-    if (result) updated.latestResult = result;
-    updated.checklist = { ...(updated.checklist || DEFAULT_CHECKLIST), recipeCreated: true };
-    updateProject(updated);
-    toast({ title: "Rezeptur gespeichert" });
-  };
-
-  // --- Process Settings Save Handler ---
-  const handleProcessSave = (settings: ProcessSettings, note: string) => {
-    if (!selectedProject) return;
-    const updated = { ...selectedProject };
-    
-    if (updated.processSettings) {
-      addTimelineEvent(updated, "parameter", `Parameter aktualisiert: ${note || "Änderung"}`);
-    }
-    
-    updated.processSettings = settings;
-    updated.checklist = { ...(updated.checklist || DEFAULT_CHECKLIST), processCreated: true };
-    updateProject(updated);
-    toast({ title: "Prozess-Parameter gespeichert" });
-  };
-
-  // --- FMEA Save Handler ---
-  const handleFmeaSave = (data: FmeaData) => {
-    if (!selectedProject) return;
-    const updated = { ...selectedProject };
-    updated.fmeaData = data;
-    addTimelineEvent(updated, "milestone", "FMEA aktualisiert");
-    updateProject(updated);
-    toast({ title: "FMEA gespeichert" });
-  };
-
-  // --- Filter & Search ---
-  const filteredProjects = projects.filter(p => {
-    const matchesSearch = !searchTerm ||
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.articleNumber && p.articleNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.customer && p.customer.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesFilter = filterStatus === "all" || p.status === filterStatus;
-    return matchesSearch && matchesFilter;
+  
+  // Wizard State
+  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [newProjectData, setNewProjectData] = useState<{
+      name: string;
+      articleNumber: string;
+      customer: string; // New Customer field
+      fatTarget: number;
+      proteinTarget: number;
+      awLimit: number;
+      template: string;
+      productIdea: string;
+      customerAgreements: string;
+  }>({
+      name: "",
+      articleNumber: "",
+      customer: "",
+      fatTarget: 25,
+      proteinTarget: 15,
+      awLimit: 0.94,
+      template: "none",
+      productIdea: "",
+      customerAgreements: ""
   });
 
-  // --- Landing Page ---
-  if (showLanding) {
-    return <LandingPage onStart={handleLandingStart} onImportBackup={handleLandingImport} />;
-  }
+  // Edit Project State
+  const [showEditProjectDialog, setShowEditProjectDialog] = useState(false);
+  const [editProjectData, setEditProjectData] = useState<{
+      name: string;
+      articleNumber: string;
+      customer: string;
+      productIdea: string;
+      productImage?: string;
+      customerAgreements: string;
+      status: string;
+  }>({ name: "", articleNumber: "", customer: "", productIdea: "", productImage: undefined, customerAgreements: "", status: "development" });
 
-  // --- Project Detail View ---
-  if (selectedProject) {
-    const project = selectedProject;
-    const checklist = project.checklist || DEFAULT_CHECKLIST;
-    const checklistTotal = Object.values(checklist).filter(Boolean).length;
+  // Translation State
+  const [showTranslationDialog, setShowTranslationDialog] = useState(false);
+  const [targetLanguage, setTargetLanguage] = useState("en");
+  const [translatedText, setTranslatedText] = useState("");
+  const [isTranslating, setIsTranslating] = useState(false);
 
-    return (
-      <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="flex items-center gap-4 p-4 border-b bg-background">
-          <Button variant="ghost" size="sm" onClick={() => { setSelectedProject(null); setActiveTab("overview"); }}>
-            <ArrowLeft className="w-4 h-4 mr-2" /> Zurück
-          </Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold truncate">{project.name}</h1>
-              <Badge className={STATUS_CONFIG[project.status].color}>
-                {STATUS_CONFIG[project.status].label}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground truncate">
-              {project.articleNumber && `Art.Nr.: ${project.articleNumber} · `}
-              {project.customer && `${project.customer} · `}
-              Checkliste: {checklistTotal}/7
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => generateProjectPDF(project as any)}>
-              <Download className="w-4 h-4 mr-1" /> PDF
-            </Button>
-            <Select value={project.status} onValueChange={(val) => {
-              const updated = { ...project, status: val as ProjectStatus };
-              addTimelineEvent(updated, "milestone", `Status → ${STATUS_CONFIG[val as ProjectStatus].label}`);
-              updateProject(updated);
-            }}>
-              <SelectTrigger className="w-[140px] h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="development">Entwicklung</SelectItem>
-                <SelectItem value="validation">Validierung</SelectItem>
-                <SelectItem value="production">Produktion</SelectItem>
-                <SelectItem value="archived">Archiv</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+  // Landing Page State
+  const [showLanding, setShowLanding] = useState(() => {
+      // Check if we've already seen the landing page this session
+      return !sessionStorage.getItem("quid-landing-seen");
+  });
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="mx-4 mt-2 w-fit">
-            <TabsTrigger value="overview">Übersicht</TabsTrigger>
-            <TabsTrigger value="recipe">Rezeptur</TabsTrigger>
-            <TabsTrigger value="process">Prozess</TabsTrigger>
-            <TabsTrigger value="fmea">FMEA</TabsTrigger>
-            <TabsTrigger value="sensory">Sensorik</TabsTrigger>
-            <TabsTrigger value="timeline">Verlauf</TabsTrigger>
-          </TabsList>
+  // Ingredient Check Dialog State
+  const [showNewIngredientDialog, setShowNewIngredientDialog] = useState(false);
 
-          <ScrollArea className="flex-1">
-            {/* OVERVIEW TAB */}
-            <TabsContent value="overview" className="p-4 space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Stammdaten */}
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Stammdaten</CardTitle></CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="space-y-1">
-                      <Label>Projektname</Label>
-                      <Input value={project.name} onChange={e => updateProject({ ...project, name: e.target.value })} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Artikelnummer</Label>
-                      <Input value={project.articleNumber || ""} onChange={e => updateProject({ ...project, articleNumber: e.target.value })} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Kunde</Label>
-                      <Input value={project.customer || ""} onChange={e => updateProject({ ...project, customer: e.target.value })} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Standard-Fließdiagramm</Label>
-                      <Select value={project.processFlow || ""} onValueChange={val => updateProject({ ...project, processFlow: val })}>
-                        <SelectTrigger><SelectValue placeholder="Auswählen..." /></SelectTrigger>
-                        <SelectContent>
-                          {FLOW_DIAGRAMS.map(f => (
-                            <SelectItem key={f.id} value={f.id}>{f.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-2 pt-2">
-                      <Switch checked={project.isNewProcess || false} onCheckedChange={v => updateProject({ ...project, isNewProcess: v })} />
-                      <Label>Neuer Prozess (FMEA erforderlich)</Label>
-                    </div>
-                  </CardContent>
-                </Card>
+  const handleStartLanding = () => {
+      sessionStorage.setItem("quid-landing-seen", "true");
+      setShowLanding(false);
+  };
 
-                {/* Checklist */}
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Checkliste ({checklistTotal}/7)</CardTitle></CardHeader>
-                  <CardContent className="space-y-2">
-                    {[
-                      { key: "articleCreated", label: "Artikelanlage" },
-                      { key: "recipeCreated", label: "Rezeptur erstellt" },
-                      { key: "labelCreated", label: "Etikett / Deklaration" },
-                      { key: "nutritionCreated", label: "Nährwerte berechnet" },
-                      { key: "specCreated", label: "Spezifikation erstellt" },
-                      { key: "processCreated", label: "Prozessparameter definiert" },
-                      { key: "navisionCreated", label: "Navision / ERP angelegt" },
-                    ].map(item => (
-                      <div key={item.key} className="flex items-center gap-2">
-                        <Switch
-                          checked={(checklist as any)[item.key] || false}
-                          onCheckedChange={(v) => {
-                            const updated = { ...project, checklist: { ...checklist, [item.key]: v } };
-                            updateProject(updated);
-                          }}
-                        />
-                        <span className="text-sm">{item.label}</span>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+  // Selected Customer View
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
 
-                {/* Produktidee */}
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Produktidee</CardTitle></CardHeader>
-                  <CardContent>
-                    <Textarea
-                      placeholder="Beschreibung der Produktidee..."
-                      value={project.productIdea || ""}
-                      onChange={e => updateProject({ ...project, productIdea: e.target.value })}
-                      rows={4}
-                    />
-                  </CardContent>
-                </Card>
+  // Recipe History & Comparison
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedVersions, setSelectedVersions] = useState<SavedRecipe[]>([]);
 
-                {/* Kundenabsprachen */}
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Kundenabsprachen</CardTitle></CardHeader>
-                  <CardContent>
-                    <Textarea
-                      placeholder="Vereinbarungen mit dem Kunden..."
-                      value={project.customerAgreements || ""}
-                      onChange={e => updateProject({ ...project, customerAgreements: e.target.value })}
-                      rows={4}
-                    />
-                  </CardContent>
-                </Card>
+  // Process History & Comparison
+  const [processCompareMode, setProcessCompareMode] = useState(false);
+  const [selectedProcessVersions, setSelectedProcessVersions] = useState<ProcessSettings[]>([]);
 
-                {/* Notizen */}
-                <Card className="lg:col-span-2">
-                  <CardHeader><CardTitle className="text-base">Notizen</CardTitle></CardHeader>
-                  <CardContent>
-                    <Textarea
-                      placeholder="Interne Notizen..."
-                      value={project.notes || ""}
-                      onChange={e => updateProject({ ...project, notes: e.target.value })}
-                      rows={3}
-                    />
-                  </CardContent>
-                </Card>
+  // Timeline Comments State
+  const [commentInputOpen, setCommentInputOpen] = useState<number | null>(null);
+  const [commentText, setCommentText] = useState("");
+  const [activeTab, setActiveTab] = useState("timeline");
 
-                {/* Quick Result Summary */}
-                {project.latestResult && (
-                  <Card className="lg:col-span-2 border-primary/30">
-                    <CardHeader><CardTitle className="text-base">Letztes QUID-Ergebnis</CardTitle></CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                        <div>
-                          <div className="text-2xl font-bold text-primary">{project.latestResult.totalRawMass.toFixed(2)}</div>
-                          <div className="text-xs text-muted-foreground">Rohmasse (kg)</div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-primary">{project.latestResult.totalEndWeight.toFixed(2)}</div>
-                          <div className="text-xs text-muted-foreground">Endgewicht (kg)</div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-primary">{project.latestResult.meatPercentage.toFixed(1)}%</div>
-                          <div className="text-xs text-muted-foreground">Fleischanteil</div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-primary">{project.latestResult.ingredients.length}</div>
-                          <div className="text-xs text-muted-foreground">Zutaten</div>
-                        </div>
-                      </div>
-                      {project.latestResult.warnings.length > 0 && (
-                        <div className="mt-3 p-2 bg-yellow-50 rounded text-sm text-yellow-800">
-                          <AlertTriangle className="w-4 h-4 inline mr-1" />
-                          {project.latestResult.warnings.length} Hinweis(e)
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </TabsContent>
-
-            {/* RECIPE TAB */}
-            <TabsContent value="recipe" className="p-4">
-              <ProjectRecipeEditor
-                initialRecipe={project.currentRecipe}
-                onSave={handleRecipeSave}
-                autoSave={true}
-                onResultChange={(result) => {
-                  if (result && selectedProject) {
-                    const updated = { ...selectedProject, latestResult: result };
-                    setSelectedProject(updated);
+  const handleEventClick = (event: TimelineEvent) => {
+      // Logic to switch tabs based on event type
+      if (event.type === 'recipe') {
+          setActiveTab("recipe");
+          toast({
+              title: "Rezeptur geöffnet",
+              description: `Wechsle zu Rezeptur-Ansicht für: ${event.title}`,
+          });
+          // In a real app, we might also want to load the specific version from event.value
+          // For now, we just switch the tab.
+      } else if (event.type === 'parameter' || (event.type === 'milestone' && event.title.includes('Prozess'))) {
+          // Assuming 'parameter' type or milestones related to process
+          setActiveTab("process");
+          toast({
+              title: "Prozess-Parameter geöffnet",
+              description: `Wechsle zu Prozess-Parameter-Ansicht`,
+          });
+      } else if (event.type === 'file' || event.type === 'email') {
+          // Optional: Switch to docs or just stay here
+          // For now, we do nothing special or maybe switch to docs if it's a file
+          if (event.type === 'file') {
+              setActiveTab("docs");
+               toast({
+                  title: "Dokumentenablage geöffnet",
+                  description: `Wechsle zu Dokumentenablage`,
+              });
+          } else if (event.type === 'email' && event.attachmentContent) {
+              // Restore functionality: Open email in Outlook (Download .msg/.eml)
+              try {
+                  let content: string | Blob = event.attachmentContent;
+                  
+                  // Convert base64 to blob if needed
+                  if (typeof content === 'string' && content.startsWith('data:')) {
+                      const arr = content.split(',');
+                      const mimeMatch = arr[0].match(/:(.*?);/);
+                      if (mimeMatch) {
+                          const bstr = atob(arr[1]);
+                          let n = bstr.length;
+                          const u8arr = new Uint8Array(n);
+                          while(n--){
+                              u8arr[n] = bstr.charCodeAt(n);
+                          }
+                          content = new Blob([u8arr], {type: mimeMatch[1]});
+                      }
                   }
-                }}
-                mode="project"
-              />
-            </TabsContent>
 
-            {/* PROCESS TAB */}
-            <TabsContent value="process" className="p-4">
-              <ProcessParametersEditor
-                initialSettings={project.processSettings}
-                onSave={handleProcessSave}
-                productName={project.name}
-                articleNumber={project.articleNumber}
-              />
-            </TabsContent>
+                  // Create download link
+                  const url = window.URL.createObjectURL(content instanceof Blob ? content : new Blob([content]));
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', event.attachment || `email_${event.date}.msg`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  
+                  toast({
+                      title: "E-Mail wird geöffnet",
+                      description: "Datei wurde an Outlook übergeben.",
+                  });
+              } catch (e) {
+                  console.error("Error opening email:", e);
+                  toast({
+                      title: "Fehler",
+                      description: "E-Mail konnte nicht geöffnet werden.",
+                      variant: "destructive"
+                  });
+              }
+          }
+      }
+  };
 
-            {/* FMEA TAB */}
-            <TabsContent value="fmea" className="p-4">
-              {project.isNewProcess ? (
-                <FmeaEditor
-                  initialData={project.fmeaData}
-                  onSave={handleFmeaSave}
-                  productName={project.name}
-                  articleNumber={project.articleNumber}
-                />
-              ) : (
-                <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">
-                    <ShieldCheck className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                    <p className="font-medium">FMEA nicht erforderlich</p>
-                    <p className="text-sm mt-1">Aktivieren Sie &quot;Neuer Prozess&quot; in der Übersicht, um eine FMEA anzulegen.</p>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
+  // Load Projects on Mount
+  useEffect(() => {
+      const load = () => {
+          try {
+              const data = sessionStorage.getItem(PROJECT_STORAGE_KEY);
+              if (data) {
+                  const parsed = JSON.parse(data);
+                  setProjects(parsed.sort((a: Project, b: Project) => 
+                      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+                  ));
+              }
+          } catch (e) {
+              console.error("Failed to load projects", e);
+          }
+      };
+      load();
+  }, []);
 
-            {/* SENSORY TAB */}
-            <TabsContent value="sensory" className="p-4">
-              <Card>
-                <CardHeader><CardTitle>Sensorische Eigenschaften</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <Label>Aussehen</Label>
-                      <Textarea
-                        value={project.sensory?.appearance || ""}
-                        onChange={e => updateProject({
-                          ...project,
-                          sensory: { ...project.sensory, appearance: e.target.value }
-                        })}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Geruch</Label>
-                      <Textarea
-                        value={project.sensory?.odor || ""}
-                        onChange={e => updateProject({
-                          ...project,
-                          sensory: { ...project.sensory, odor: e.target.value }
-                        })}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Geschmack</Label>
-                      <Textarea
-                        value={project.sensory?.taste || ""}
-                        onChange={e => updateProject({
-                          ...project,
-                          sensory: { ...project.sensory, taste: e.target.value }
-                        })}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Textur</Label>
-                      <Textarea
-                        value={project.sensory?.texture || ""}
-                        onChange={e => updateProject({
-                          ...project,
-                          sensory: { ...project.sensory, texture: e.target.value }
-                        })}
-                        rows={3}
-                      />
-                    </div>
-                  </div>
-                  <Separator />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <Label>Länge / Breite</Label>
-                      <Input
-                        value={project.sensory?.dimensions?.length || ""}
-                        onChange={e => updateProject({
-                          ...project,
-                          sensory: {
-                            ...project.sensory,
-                            dimensions: { ...project.sensory?.dimensions, length: e.target.value }
+  const saveProjects = (newProjects: Project[]) => {
+      sessionStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(newProjects));
+      setProjects(newProjects);
+  };
+
+  const handleUpdateProject = (updatedProject: Project) => {
+      const updatedList = projects.map(p => p.id === updatedProject.id ? updatedProject : p);
+      saveProjects(updatedList);
+      setActiveProject(updatedProject);
+  };
+
+    const [checklist, setChecklist] = useState<{
+        articleCreated: boolean;
+        recipeCreated: boolean;
+        labelCreated: boolean;
+        nutritionCreated: boolean;
+        specCreated: boolean;
+        processCreated: boolean;
+        navisionCreated: boolean;
+        sensoryCreated?: boolean; // NEW
+    }>({
+        articleCreated: false,
+        recipeCreated: false,
+        labelCreated: false,
+        nutritionCreated: false,
+        specCreated: false,
+        processCreated: false,
+        navisionCreated: false,
+        sensoryCreated: false
+    });
+
+    const [labelChecklist, setLabelChecklist] = useState({
+        name: false,
+        ingredients: false,
+        allergens: false,
+        quantity: false,
+        netWeight: false,
+        bestBefore: false,
+        storage: false,
+        address: false,
+        origin: false,
+        instructions: false,
+        nutrition: false,
+        gas: false
+    });
+    const [showLabelChecklistDialog, setShowLabelChecklistDialog] = useState(false);
+
+    // Initialize checklist from project or default
+    useEffect(() => {
+        if (activeProject) {
+            setChecklist(activeProject.checklist || {
+                articleCreated: false,
+                recipeCreated: false,
+                labelCreated: false,
+                nutritionCreated: false,
+                specCreated: false,
+                processCreated: false,
+                navisionCreated: false,
+                sensoryCreated: !!activeProject.sensory
+            });
+            
+            if (activeProject.labelChecklist) {
+                setLabelChecklist(activeProject.labelChecklist);
+            } else {
+                setLabelChecklist({
+                    name: false,
+                    ingredients: false,
+                    allergens: false,
+                    quantity: false,
+                    netWeight: false,
+                    bestBefore: false,
+                    storage: false,
+                    address: false,
+                    origin: false,
+                    instructions: false,
+                    nutrition: false,
+                    gas: false
+                });
+            }
+        }
+    }, [activeProject]);
+
+    const handleChecklistChange = (key: keyof typeof checklist) => {
+        if (!activeProject) return;
+        const newChecklist = { ...checklist, [key]: !checklist[key] };
+        setChecklist(newChecklist);
+        
+        // Update project with new checklist state
+        const updatedProject = {
+            ...activeProject,
+            checklist: newChecklist,
+            updatedAt: new Date().toISOString()
+        };
+        handleUpdateProject(updatedProject);
+    };
+
+    // Calculate progress
+    // Filter out sensoryCreated from the count to match the 7 visible items
+    const checklistKeys = Object.keys(checklist).filter(key => key !== 'sensoryCreated');
+    const totalCount = checklistKeys.length;
+    const completedCount = checklistKeys.filter(key => checklist[key as keyof typeof checklist]).length;
+    const progressPercentage = Math.round((completedCount / totalCount) * 100);
+
+  // Drag & Drop Logic for Files/Emails
+  const onDrop = async (acceptedFiles: File[]) => {
+      if (!activeProject) return;
+
+      const filePromises = acceptedFiles.map(file => {
+          return new Promise<TimelineEvent>((resolve) => {
+              const isEmail = file.name.endsWith('.msg') || file.name.endsWith('.eml');
+              
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                  resolve({
+                      id: Date.now() + Math.random(),
+                      type: isEmail ? 'email' : 'file',
+                      title: isEmail ? 'E-Mail empfangen' : 'Datei hochgeladen',
+                      date: new Date().toISOString().split('T')[0],
+                      user: 'User', // Current user
+                      description: `Datei hinzugefügt: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+                      status: 'ok',
+                      attachment: file.name,
+                      attachmentType: file.type,
+                      attachmentContent: e.target?.result as string
+                  });
+              };
+              reader.readAsDataURL(file);
+          });
+      });
+
+      const newEvents = await Promise.all(filePromises);
+
+      const updatedProject = {
+          ...activeProject,
+          updatedAt: new Date().toISOString(),
+          timeline: [...newEvents, ...activeProject.timeline]
+      };
+
+      handleUpdateProject(updatedProject);
+      toast({ 
+          title: "Dateien hinzugefügt", 
+          description: `${acceptedFiles.length} Datei(en) wurden dem Projekt hinzugefügt.` 
+      });
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+      onDrop,
+      noClick: true, 
+      noKeyboard: true,
+      disabled: !activeProject
+  });
+
+  // --- EXPORT / IMPORT (Local Backup) ---
+  const handleExportBackup = async (options = backupOptions) => {
+      const zip = new JSZip();
+
+      // Filter projects based on backup options passed or state
+      let projectsToBackup = projects;
+      
+      if (options.onlyArchived) {
+          projectsToBackup = projects.filter(p => p.status === 'archived');
+      } else if (!options.includeArchived) {
+          // Default: Exclude archived unless explicitly included
+          projectsToBackup = projects.filter(p => p.status !== 'archived');
+      }
+
+      if (projectsToBackup.length === 0) {
+          toast({ title: "Keine Projekte", description: "Es wurden keine Projekte für das Backup gefunden.", variant: "destructive" });
+          return;
+      }
+      
+      // Optimize: Create a lean version of projects for the JSON file (without base64 content)
+      // We will rely on the physical files in the ZIP to restore the content.
+      const leanProjects = projectsToBackup.map(p => ({
+          ...p,
+          timeline: p.timeline.map(e => {
+              if (e.attachmentContent) {
+                  // Return event without the heavy content
+                  const { attachmentContent, ...rest } = e;
+                  return rest;
+              }
+              return e;
+          })
+      }));
+
+      // 1. Projects (Lean Version)
+      zip.file("projects.json", JSON.stringify(leanProjects, null, 2));
+
+      // 2. Global Ingredients (Zutaten)
+      // Only include global DBs if NOT "only archived" mode, or if user wants them?
+      // Usually good to include them to ensure restore works.
+      const ingredientsData = sessionStorage.getItem("quid-ingredient-db-clean");
+      if (ingredientsData) {
+          zip.file("ingredients.json", ingredientsData);
+      }
+
+      // 3. Global Recipes (Vorlagen)
+      const recipesData = sessionStorage.getItem("quid-recipe-db-clean");
+      if (recipesData) {
+          zip.file("recipes.json", recipesData);
+      }
+
+      // Create folder structure for Customers and Projects (Readable Backup AND Source for Restore)
+      const customersFolder = zip.folder("Kunden");
+      
+      projectsToBackup.forEach(project => {
+          const customerName = project.customer || "Allgemein";
+          // Sanitize names for folder creation
+          const safeCustomerName = customerName.replace(/[^a-z0-9äöüß \-]/gi, '_');
+          const safeProjectName = project.name.replace(/[^a-z0-9äöüß \-]/gi, '_');
+
+          const projectFolder = customersFolder?.folder(safeCustomerName)?.folder(safeProjectName);
+          
+          if (projectFolder) {
+              // Add a README for context
+              projectFolder.file("README.txt", `Projekt: ${project.name}\nKunde: ${project.customer}\nStatus: ${project.status}\nErstellt: ${project.createdAt}\nID: ${project.id}\n`);
+              
+              // Add recipe data as JSON
+              if (project.currentRecipe) {
+                  projectFolder.file("rezeptur.json", JSON.stringify(project.currentRecipe, null, 2));
+              }
+
+              // Add timeline files - This is now the PRIMARY storage for attachments in the backup
+              const filesFolder = projectFolder.folder("Dateien");
+              project.timeline.forEach(event => {
+                  if (event.attachment && event.attachmentContent) {
+                      let content: string | Blob = event.attachmentContent;
+                      
+                      // If content is a data URL, convert to blob for the readable file and better compression
+                      if (typeof content === 'string' && content.startsWith('data:')) {
+                          try {
+                              const arr = content.split(',');
+                              const mimeMatch = arr[0].match(/:(.*?);/);
+                              if (mimeMatch) {
+                                  const bstr = atob(arr[1]);
+                                  let n = bstr.length;
+                                  const u8arr = new Uint8Array(n);
+                                  while(n--){
+                                      u8arr[n] = bstr.charCodeAt(n);
+                                  }
+                                  content = new Blob([u8arr], {type: mimeMatch[1]});
+                              }
+                          } catch (e) {
+                              console.error("Failed to convert base64 to blob for backup", e);
+                              // Fallback to string if conversion fails
                           }
-                        })}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Kaliber</Label>
-                      <Input
-                        value={project.sensory?.dimensions?.diameter || ""}
-                        onChange={e => updateProject({
-                          ...project,
-                          sensory: {
-                            ...project.sensory,
-                            dimensions: { ...project.sensory?.dimensions, diameter: e.target.value }
-                          }
-                        })}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Gewicht</Label>
-                      <Input
-                        value={project.sensory?.dimensions?.weight || ""}
-                        onChange={e => updateProject({
-                          ...project,
-                          sensory: {
-                            ...project.sensory,
-                            dimensions: { ...project.sensory?.dimensions, weight: e.target.value }
-                          }
-                        })}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Zubereitungsempfehlung</Label>
-                    <Textarea
-                      value={project.sensory?.preparation || ""}
-                      onChange={e => updateProject({
-                        ...project,
-                        sensory: { ...project.sensory, preparation: e.target.value }
-                      })}
-                      rows={3}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                      }
+                      
+                      filesFolder?.file(event.attachment, content);
+                  }
+              });
+          }
+      });
 
-            {/* TIMELINE TAB */}
-            <TabsContent value="timeline" className="p-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Projekt-Verlauf ({project.timeline.length} Einträge)</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {[...project.timeline].reverse().map(event => (
-                      <div key={event.id} className="flex gap-3 items-start p-2 rounded hover:bg-muted/50">
-                        <div className="mt-1">
-                          {event.type === "milestone" && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                          {event.type === "recipe" && <ChefHat className="w-4 h-4 text-blue-500" />}
-                          {event.type === "parameter" && <Settings className="w-4 h-4 text-orange-500" />}
-                          {event.type === "file" && <FileText className="w-4 h-4 text-purple-500" />}
-                          {event.type === "note" && <Clipboard className="w-4 h-4 text-gray-500" />}
-                          {event.type === "email" && <FileText className="w-4 h-4 text-red-500" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium">{event.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(event.date).toLocaleString("de-DE")}
-                            {event.user && ` · ${event.user}`}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </ScrollArea>
-        </Tabs>
+      const content = await zip.generateAsync({ 
+          type: "blob",
+          compression: "DEFLATE",
+          compressionOptions: {
+              level: 9 // Maximum compression
+          }
+      });
+      saveAs(content, `quid_full_backup_${new Date().toISOString().split('T')[0]}.zip`);
+      toast({ title: "Vollständiges Backup erstellt", description: "Alle Daten wurden platzsparend komprimiert." });
+  };
 
-        {/* Recipe Comparison Dialog */}
-        {showRecipeComparison && comparisonRecipes && (
-          <RecipeComparison
-            oldRecipe={comparisonRecipes.old}
-            newRecipe={comparisonRecipes.new}
-            onClose={() => setShowRecipeComparison(false)}
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+          try {
+              const zip = await JSZip.loadAsync(evt.target?.result as ArrayBuffer);
+              
+              let restoredCount = 0;
+
+              // 1. Restore Ingredients (First, as they might be needed)
+              const ingredientsFile = zip.file("ingredients.json");
+              if (ingredientsFile) {
+                  const content = await ingredientsFile.async("string");
+                  sessionStorage.setItem("quid-ingredient-db-clean", content);
+                  window.dispatchEvent(new Event("storage-update"));
+                  restoredCount++;
+              }
+
+              // 2. Restore Recipes
+              const recipesFile = zip.file("recipes.json");
+              if (recipesFile) {
+                  const content = await recipesFile.async("string");
+                  sessionStorage.setItem("quid-recipe-db-clean", content);
+                  window.dispatchEvent(new Event("recipe-storage-update"));
+                  restoredCount++;
+              }
+
+              // 3. Restore Projects and Re-Hydrate Attachments
+              const projectsFile = zip.file("projects.json");
+              if (projectsFile) {
+                  const content = await projectsFile.async("string");
+                  const importedProjects: Project[] = JSON.parse(content);
+                  
+                  // Re-attach images/files from the ZIP structure
+                  const hydratedProjects = await Promise.all(importedProjects.map(async (p) => {
+                      const customerName = p.customer || "Allgemein";
+                      const safeCustomerName = customerName.replace(/[^a-z0-9äöüß \-]/gi, '_');
+                      const safeProjectName = p.name.replace(/[^a-z0-9äöüß \-]/gi, '_');
+                      
+                      // Map over timeline to restore attachments
+                      const hydratedTimeline = await Promise.all(p.timeline.map(async (event) => {
+                          if (event.attachment && !event.attachmentContent) {
+                              // Content is missing in JSON, look for it in the zip
+                              const filePath = `Kunden/${safeCustomerName}/${safeProjectName}/Dateien/${event.attachment}`;
+                              const fileInZip = zip.file(filePath);
+                              
+                              if (fileInZip) {
+                                  // Found it! Convert back to base64/dataURL for the app to use
+                                  const blob = await fileInZip.async("blob");
+                                  return new Promise<TimelineEvent>((resolve) => {
+                                      const r = new FileReader();
+                                      r.onload = (re) => {
+                                          resolve({
+                                              ...event,
+                                              attachmentContent: re.target?.result as string
+                                          });
+                                      };
+                                      r.readAsDataURL(blob);
+                                  });
+                              }
+                          }
+                          return event;
+                      }));
+                      
+                      return { ...p, timeline: hydratedTimeline };
+                  }));
+
+                  // Restore to State and Storage
+                  setProjects(hydratedProjects);
+                  saveProjects(hydratedProjects);
+                  restoredCount++;
+              }
+
+              if (restoredCount > 0) {
+                   toast({ title: "System wiederhergestellt", description: "Daten wurden erfolgreich importiert und dekomprimiert." });
+              } else {
+                  toast({ title: "Warnung", description: "Keine bekannten Daten in diesem Backup gefunden.", variant: "destructive" });
+              }
+
+          } catch (err) {
+              console.error(err);
+              toast({ title: "Fehler", description: "Backup konnte nicht gelesen werden.", variant: "destructive" });
+          }
+      };
+      reader.readAsArrayBuffer(file);
+      // Reset input
+      e.target.value = "";
+  };
+  
+  const fileImportRef = useRef<HTMLInputElement>(null);
+
+  const handleCreateProject = () => {
+      if (!newProjectData.name.trim()) return;
+      
+      const newProject: Project = {
+          id: crypto.randomUUID(),
+          name: newProjectData.name,
+          articleNumber: newProjectData.articleNumber,
+          customer: newProjectData.customer || "Allgemein", // Default to General if empty
+          productIdea: newProjectData.productIdea,
+          customerAgreements: newProjectData.customerAgreements,
+          status: 'development',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          timeline: [
+              {
+                  id: Date.now(),
+                  type: 'milestone',
+                  title: 'Projekt Start',
+                  date: new Date().toISOString().split('T')[0],
+                  user: 'System',
+                  description: `Projekt "${newProjectData.name}" wurde initiiert.`,
+                  status: 'completed'
+              }
+          ],
+          parameters: {
+              fatTarget: newProjectData.fatTarget,
+              proteinTarget: newProjectData.proteinTarget,
+              awLimit: newProjectData.awLimit
+          },
+          currentRecipe: newProjectData.template === 'salami' ? {
+              id: crypto.randomUUID(),
+              name: newProjectData.name + " (Entwurf)",
+              updatedAt: new Date().toISOString(),
+              cookingLoss: 25,
+              lossType: 'drying',
+              ingredients: [] 
+          } : undefined
+      };
+
+      // If we have a template recipe, we do NOT add a timeline event yet.
+      // The user wants the timeline to only show "Project Start".
+      // The recipe exists as "current draft" but hasn't been "versioned" yet.
+      
+      const updated = [newProject, ...projects];
+      saveProjects(updated);
+      setActiveProject(newProject);
+      
+      setShowNewProjectDialog(false);
+      setWizardStep(1);
+      setNewProjectData({
+          name: "",
+          articleNumber: "",
+          customer: "",
+          fatTarget: 25,
+          proteinTarget: 15,
+          awLimit: 0.94,
+          template: "none",
+          productIdea: "",
+          customerAgreements: ""
+      });
+      
+      toast({ title: "Projekt erstellt", description: "Viel Erfolg bei der Entwicklung!" });
+  };
+
+
+  const handleEditProject = () => {
+      if (!activeProject || !editProjectData.name.trim()) return;
+      
+      const updated = {
+          ...activeProject,
+          name: editProjectData.name,
+          articleNumber: editProjectData.articleNumber,
+          customer: editProjectData.customer,
+          productIdea: editProjectData.productIdea,
+          productImage: editProjectData.productImage,
+          customerAgreements: editProjectData.customerAgreements,
+          status: editProjectData.status as any,
+          updatedAt: new Date().toISOString()
+      };
+      
+      handleUpdateProject(updated);
+      setShowEditProjectDialog(false);
+      toast({ title: "Projekt aktualisiert", description: "Änderungen gespeichert." });
+  };
+
+  const openEditDialog = () => {
+      if (!activeProject) return;
+      setEditProjectData({
+          name: activeProject.name,
+          articleNumber: activeProject.articleNumber || "",
+          customer: activeProject.customer || "",
+          productIdea: activeProject.productIdea || "",
+          productImage: activeProject.productImage,
+          customerAgreements: activeProject.customerAgreements || "",
+          status: activeProject.status
+      });
+      setShowEditProjectDialog(true);
+  };
+
+    const handleDeleteProject = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!confirm("Projekt wirklich löschen?")) return;
+      const updated = projects.filter(p => p.id !== id);
+      saveProjects(updated);
+      if (activeProject?.id === id) setActiveProject(null);
+      toast({ title: "Gelöscht", description: "Projekt wurde entfernt." });
+  };
+
+  const handleArchiveProject = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      
+      const project = projects.find(p => p.id === id);
+      if (!project) return;
+
+      const isArchived = project.status === 'archived';
+      const newStatus = isArchived ? 'development' : 'archived'; // Toggle or just archive? User said "mark as archived".
+
+      if (!isArchived && !confirm(`Projekt "${project.name}" archivieren? Es wird aus der Standard-Ansicht entfernt.`)) return;
+
+      const updated = projects.map(p => {
+          if (p.id === id) {
+              return { ...p, status: newStatus as any, updatedAt: new Date().toISOString() };
+          }
+          return p;
+      });
+      
+      saveProjects(updated);
+      toast({ 
+          title: isArchived ? "Wiederhergestellt" : "Archiviert", 
+          description: isArchived ? "Projekt ist wieder aktiv." : "Projekt wurde ins Archiv verschoben." 
+      });
+  };
+
+  const handleAddComment = (eventId: number, text: string) => {
+      if (!activeProject || !text.trim()) return;
+      
+      const updatedTimeline = activeProject.timeline.map(e => {
+          if (e.id === eventId) {
+              const newComment = {
+                  id: Date.now(),
+                  user: 'User',
+                  text: text,
+                  date: new Date().toISOString()
+              };
+              return { ...e, comments: [...(e.comments || []), newComment] };
+          }
+          return e;
+      });
+      
+      const updatedProject = { ...activeProject, timeline: updatedTimeline, updatedAt: new Date().toISOString() };
+      handleUpdateProject(updatedProject);
+      setCommentInputOpen(null);
+      setCommentText("");
+      toast({ title: "Kommentar hinzugefügt", description: "Ihre Anmerkung wurde gespeichert." });
+  };
+
+    // --- Project Recipe Logic ---
+    const handleRecipeUpdate = (recipe: SavedRecipe, result: QuidResult | null, createSnapshot: boolean = false) => {
+        if (!activeProject) return;
+        
+        let timeline = [...activeProject.timeline];
+        
+        // Determine if this is the FIRST save of a recipe in this project
+        const hasRecipeHistory = timeline.some(e => e.type === 'recipe');
+        
+        // Force snapshot creation ONLY if explicitly requested (User feedback: Don't auto-save 1.0 on first edit)
+        const shouldCreateSnapshot = createSnapshot;
+
+        // Only add to timeline if shouldCreateSnapshot is TRUE
+        if (shouldCreateSnapshot) {
+            const recipeEvents = timeline.filter(e => e.type === 'recipe');
+            const nextVersionIndex = recipeEvents.length + 1; 
+            const nextVersionString = `1.${nextVersionIndex}`;
+            
+            // If it's the very first one, maybe just call it 1.0? 
+            // User requested 1.0 previously.
+            // If length is 0, nextVersionIndex is 1. -> 1.1? 
+            // Let's make it 1.0 if it's the first one.
+            const versionStr = recipeEvents.length === 0 ? "1.0" : nextVersionString;
+
+            timeline = [{
+                id: Date.now(),
+                type: 'recipe',
+                title: `Rezeptur Version ${versionStr}`,
+                date: new Date().toISOString().split('T')[0],
+                user: 'User',
+                description: `Rezeptur-Update gespeichert.`,
+                status: 'completed',
+                value: JSON.stringify(recipe), // Snapshot
+                changes: [
+                    `Endgewicht: ${result?.totalEndWeight.toFixed(3) || "?"} kg`,
+                    `${recipe.ingredients.length} Zutaten`
+                ]
+            }, ...timeline];
+        }
+
+        // Update the project with new recipe state (Current State)
+        const updatedProject = {
+            ...activeProject,
+            updatedAt: new Date().toISOString(),
+            currentRecipe: recipe,
+            latestResult: result || undefined,
+            timeline: timeline
+        };
+        
+        handleUpdateProject(updatedProject);
+    };
+
+
+    // --- Process Parameters Logic ---
+    const handleProcessSettingsSave = (settings: ProcessSettings, note: string) => {
+        if (!activeProject) return;
+
+        const newEvent: TimelineEvent = {
+            id: Date.now(),
+            type: 'parameter',
+            title: `Prozess-Parameter v${settings.version}`,
+            date: new Date().toISOString().split('T')[0],
+            user: 'User',
+            description: note,
+            status: 'completed',
+            value: JSON.stringify(settings)
+        };
+
+        const updatedProject = {
+            ...activeProject,
+            updatedAt: new Date().toISOString(),
+            processSettings: settings,
+            timeline: [newEvent, ...activeProject.timeline]
+        };
+
+        handleUpdateProject(updatedProject);
+        toast({ title: "Parameter gespeichert", description: `Version ${settings.version} wurde angelegt.` });
+    };
+
+    const getProcessHistory = () => {
+        if (!activeProject) return [];
+        return activeProject.timeline
+            .filter(e => e.type === 'parameter' && e.value)
+            .map(e => {
+                try {
+                    const settings = JSON.parse(e.value!);
+                    return {
+                        version: settings.version || "1.0",
+                        date: e.date,
+                        user: e.user,
+                        note: e.description,
+                        settings: settings
+                    };
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean) as any[];
+    };
+
+
+  const handleSpecExport = async () => {
+      if (!activeProject?.latestResult || !activeProject?.currentRecipe) return;
+      
+      try {
+          await generateSpecificationExcel(activeProject.name, activeProject.latestResult, activeProject.currentRecipe);
+          toast({ title: "Export erfolgreich", description: "Spezifikation wurde erstellt." });
+      } catch (e) {
+          toast({ title: "Export Fehler", description: "Spezifikation konnte nicht erstellt werden.", variant: "destructive" });
+      }
+  };
+
+    const handleTranslate = () => {
+      // Use labelText from latestResult if available, otherwise try to generate it from currentRecipe
+      let sourceText = activeProject?.latestResult?.labelText;
+      
+      // Fallback: If no result cached, try to calculate it or warn
+      if (!sourceText && activeProject?.currentRecipe) {
+           // We can't easily calculate here without importing the heavy logic or duplicating it. 
+           // But usually latestResult should be there if opened.
+           toast({ title: "Kein Text", description: "Bitte erst die Rezeptur berechnen lassen.", variant: "destructive" });
+           return;
+      }
+      
+      if (!sourceText) return;
+      
+      setIsTranslating(true);
+      
+      // Mock Translation Logic - Extended Dictionary
+      setTimeout(() => {
+          let mockTranslation = sourceText || "";
+          
+          const dictionaries: Record<string, Record<string, string>> = {
+              'en': {
+                  'Schweinefleisch': 'Pork',
+                  'Rindfleisch': 'Beef',
+                  'Speck': 'Bacon fat',
+                  'Salz': 'Salt',
+                  'Gewürze': 'Spices',
+                  'Wasser': 'Water',
+                  'Trinkwasser': 'Water',
+                  'Pökelsalz': 'Curing salt',
+                  'Konservierungsstoff': 'Preservative',
+                  'Antioxidationsmittel': 'Antioxidant',
+                  'Rauch': 'Smoke',
+                  'Dextrose': 'Dextrose',
+                  'Zucker': 'Sugar',
+                  'hergestellt aus': 'made from',
+                  'je 100 g': 'per 100g',
+                  'des Enderzeugnisses': 'of finished product',
+                  'Putenfleisch': 'Turkey meat',
+                  'Hähnchenfleisch': 'Chicken meat',
+                  'Kalbfleisch': 'Veal',
+                  'Lammfleisch': 'Lamb',
+              },
+              'fr': {
+                  'Schweinefleisch': 'Porc',
+                  'Rindfleisch': 'Boeuf',
+                  'Speck': 'Lard',
+                  'Salz': 'Sel',
+                  'Gewürze': 'Épices',
+                  'Wasser': 'Eau',
+                  'Trinkwasser': 'Eau',
+                  'Pökelsalz': 'Sel nitrité',
+                  'Konservierungsstoff': 'Conservateur',
+                  'Antioxidationsmittel': 'Antioxydant',
+                  'Rauch': 'Fumée',
+                  'Dextrose': 'Dextrose',
+                  'Zucker': 'Sucre',
+                  'hergestellt aus': 'préparé à partir de',
+                  'je 100 g': 'pour 100g',
+                  'des Enderzeugnisses': 'de produit fini',
+                  'Putenfleisch': 'Viande de dinde',
+                  'Hähnchenfleisch': 'Viande de poulet',
+                  'Kalbfleisch': 'Veau',
+                  'Lammfleisch': 'Agneau',
+              },
+              'es': {
+                  'Schweinefleisch': 'Cerdo',
+                  'Rindfleisch': 'Ternera',
+                  'Speck': 'Tocino',
+                  'Salz': 'Sal',
+                  'Gewürze': 'Especias',
+                  'Wasser': 'Agua',
+                  'Trinkwasser': 'Agua',
+                  'Pökelsalz': 'Sal de curado',
+                  'Konservierungsstoff': 'Conservante',
+                  'Antioxidationsmittel': 'Antioxidante',
+                  'Rauch': 'Humo',
+                  'Dextrose': 'Dextrosa',
+                  'Zucker': 'Azúcar',
+                  'hergestellt aus': 'elaborado con',
+                  'je 100 g': 'por 100g',
+                  'des Enderzeugnisses': 'de producto final',
+                  'Putenfleisch': 'Carne de pavo',
+                  'Hähnchenfleisch': 'Carne de pollo',
+                  'Kalbfleisch': 'Ternera',
+                  'Lammfleisch': 'Cordero',
+              }
+          };
+
+          const dict = dictionaries[targetLanguage];
+          if (dict) {
+              // Sort keys by length (descending) to match longest phrases first (e.g. "hergestellt aus")
+              const keys = Object.keys(dict).sort((a, b) => b.length - a.length);
+              
+              keys.forEach(key => {
+                  const regex = new RegExp(key, 'gi'); // Case insensitive replacement
+                  mockTranslation = mockTranslation.replace(regex, (match) => {
+                      // Preserve casing of the match if possible, or just use the dictionary value
+                      // Simple approach: Use dictionary value
+                      return dict[key];
+                  });
+              });
+          }
+
+          setTranslatedText(mockTranslation);
+          setIsTranslating(false);
+      }, 600);
+  };
+
+  const handleDeleteEvent = (eventId: number, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!activeProject) return;
+
+      if (confirm("Möchten Sie dieses Ereignis wirklich unwiderruflich löschen?")) {
+          const updatedTimeline = activeProject.timeline.filter(event => event.id !== eventId);
+          const updatedProject = { ...activeProject, timeline: updatedTimeline, updatedAt: new Date().toISOString() };
+          
+          setActiveProject(updatedProject);
+          handleUpdateProject(updatedProject);
+          toast({ title: "Ereignis gelöscht", description: "Das Ereignis wurde aus der Timeline entfernt." });
+      }
+  };
+
+  const openDeepL = () => {
+    // Construct DeepL URL
+    // Format: https://www.deepl.com/translator#de/en/Mein%20Text
+    // Source is mostly German (de), Target depends on selection
+    if (!activeProject?.latestResult?.labelText) {
+        toast({ title: "Kein Text", description: "Bitte erst die Rezeptur berechnen lassen.", variant: "destructive" });
+        return;
+    }
+    
+    const text = encodeURIComponent(activeProject.latestResult.labelText);
+    const target = targetLanguage; // en, fr, es
+    const url = `https://www.deepl.com/translator#de/${target}/${text}`;
+    
+    window.open(url, '_blank');
+  };
+
+  const copyLabelText = () => {
+    if (activeProject?.latestResult?.labelText) {
+        navigator.clipboard.writeText(activeProject.latestResult.labelText);
+        toast({ title: "Kopiert", description: "Etikett-Text in Zwischenablage." });
+    }
+  };
+
+    const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
+
+    // --- IMAGE GALLERY STATE ---
+    const [showImageGallery, setShowImageGallery] = useState(false);
+    const [galleryImages, setGalleryImages] = useState<TimelineEvent[]>([]);
+    const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+    const openProjectImages = (project: Project, e: React.MouseEvent) => {
+        e.preventDefault(); // Add preventDefault just in case
+        e.stopPropagation();
+        
+        const images = project.timeline.filter(
+            evt => (evt.type === 'file' || evt.type === 'email') && // Allow both types if they have image content
+            (evt.attachmentType?.startsWith('image/') || evt.attachment?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) && 
+            evt.attachmentContent
+        );
+        
+        console.log("Opening images for project:", project.name, "Count:", images.length); // Debug log
+
+        if (images.length > 0) {
+            setGalleryImages(images);
+            setCurrentImageIndex(0);
+            setShowImageGallery(true);
+        } else {
+             toast({ title: "Keine Bilder", description: "In diesem Projekt wurden noch keine Bilder gefunden.", variant: "secondary" });
+        }
+    };
+
+    const nextImage = () => {
+        setCurrentImageIndex((prev) => (prev + 1) % galleryImages.length);
+    };
+
+    const prevImage = () => {
+        setCurrentImageIndex((prev) => (prev - 1 + galleryImages.length) % galleryImages.length);
+    };
+
+    // --- FILTERING & CUSTOMERS ---
+    
+    // Get unique customers
+    const customers = Array.from(new Set(projects.map(p => p.customer || "Allgemein"))).sort();
+
+    // Filter customers by selected letter
+    const filteredCustomers = customers.filter(c => {
+        if (!selectedLetter) return true;
+        return c.toUpperCase().startsWith(selectedLetter);
+    });
+
+    const filteredProjects = projects.filter(p => {
+        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              (p.articleNumber && p.articleNumber.toLowerCase().includes(searchTerm.toLowerCase()));
+        const matchesCustomer = selectedCustomer ? (p.customer || "Allgemein") === selectedCustomer : true;
+        return matchesSearch && matchesCustomer;
+    });
+
+    // Alphabet for register
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+  // --- RENDER ---
+
+  if (showLanding) {
+      return (
+          <LandingPage 
+              onStart={handleStartLanding} 
+              onImportBackup={(e) => {
+                  handleImportBackup(e);
+                  handleStartLanding();
+              }} 
           />
-        )}
-
-        {/* Process Comparison Dialog */}
-        {showProcessComparison && comparisonProcess && (
-          <ProcessComparison
-            oldProcess={comparisonProcess.old}
-            newProcess={comparisonProcess.new}
-            onClose={() => setShowProcessComparison(false)}
-          />
-        )}
-      </div>
-    );
+      );
   }
 
-  // --- Project List View ---
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-4 border-b bg-background">
-        <div className="flex items-center justify-between mb-3">
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <LayoutDashboard className="w-5 h-5" /> Produkt Dashboard
-          </h1>
-          <div className="flex gap-2">
-            <DataManagement />
-            <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-              <DialogTrigger asChild>
-                <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Neues Projekt</Button>
-              </DialogTrigger>
-              <DialogContent>
+  const BackupDialog = () => (
+        <Dialog open={showBackupDialog} onOpenChange={setShowBackupDialog}>
+            <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Neues Projekt anlegen</DialogTitle>
-                  <DialogDescription>Erstellen Sie ein neues Produktentwicklungs-Projekt.</DialogDescription>
+                    <DialogTitle>Backup erstellen</DialogTitle>
+                    <DialogDescription>
+                        Wählen Sie den Umfang des Backups.
+                    </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-3 py-2">
-                  <div className="space-y-1">
-                    <Label>Projektname *</Label>
-                    <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="z.B. Schweineschnitzel paniert" autoFocus />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Kunde (optional)</Label>
-                    <Input value={newCustomer} onChange={e => setNewCustomer(e.target.value)} placeholder="z.B. Firma XY" />
-                  </div>
+                <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label>Backup-Umfang</Label>
+                        <Select 
+                            value={backupOptions.onlyArchived ? "archive" : backupOptions.includeArchived ? "all" : "active"}
+                            onValueChange={(val) => {
+                                if (val === "active") setBackupOptions({ includeArchived: false, onlyArchived: false });
+                                if (val === "all") setBackupOptions({ includeArchived: true, onlyArchived: false });
+                                if (val === "archive") setBackupOptions({ includeArchived: false, onlyArchived: true });
+                            }}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Wählen..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="active">Nur aktive Projekte (Standard)</SelectItem>
+                                <SelectItem value="all">Alles sichern (Inkl. Archiv)</SelectItem>
+                                <SelectItem value="archive">Nur Archiv (Auslagerung)</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            {backupOptions.onlyArchived ? "Sichert nur archivierte Projekte. Gut zum Auslagern alter Daten." : 
+                             backupOptions.includeArchived ? "Sichert alle Projekte, auch archivierte. Kann sehr groß werden." : 
+                             "Sichert nur laufende Projekte (Status: Entwicklung, Produktion)."}
+                        </p>
+                    </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowNewDialog(false)}>Abbrechen</Button>
-                  <Button onClick={handleCreateProject}>Erstellen</Button>
+                    <Button variant="outline" onClick={() => setShowBackupDialog(false)}>Abbrechen</Button>
+                    <Button onClick={() => {
+                        handleExportBackup();
+                        setShowBackupDialog(false);
+                    }}>
+                        <Download className="mr-2 h-4 w-4" /> Backup erstellen
+                    </Button>
                 </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+            </DialogContent>
+        </Dialog>
+  );
 
-        {/* Search & Filter */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Suche nach Name, Art.Nr., Kunde..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Alle Status</SelectItem>
-              <SelectItem value="development">Entwicklung</SelectItem>
-              <SelectItem value="validation">Validierung</SelectItem>
-              <SelectItem value="production">Produktion</SelectItem>
-              <SelectItem value="archived">Archiv</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+  const ImageGalleryDialog = () => (
+        <Dialog open={showImageGallery} onOpenChange={setShowImageGallery}>
+            <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black/95 border-none text-white z-[9999]" aria-describedby="gallery-description">
+                 <DialogTitle className="sr-only">Bildergalerie</DialogTitle>
+                 <div id="gallery-description" className="sr-only">Ansicht der Projektbilder</div>
+                <div className="relative w-full h-[80vh] flex flex-col items-center justify-center">
+                    
+                    {/* Close Button */}
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="absolute top-4 right-4 text-white/70 hover:text-white hover:bg-white/10 z-50"
+                        onClick={() => setShowImageGallery(false)}
+                    >
+                        <X className="h-6 w-6" />
+                    </Button>
 
-      {/* Project Grid */}
-      <ScrollArea className="flex-1 p-4">
-        {filteredProjects.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
-            <p className="font-medium">Keine Projekte gefunden</p>
-            <p className="text-sm mt-1">Erstellen Sie ein neues Projekt um loszulegen.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filteredProjects.map(project => {
-              const checklist = project.checklist || DEFAULT_CHECKLIST;
-              const checkDone = Object.values(checklist).filter(Boolean).length;
-              return (
-                <Card
-                  key={project.id}
-                  className="cursor-pointer hover:border-primary/50 transition-colors"
-                  onClick={() => setSelectedProject(project)}
-                >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0 flex-1">
-                        <CardTitle className="text-sm truncate">{project.name}</CardTitle>
-                        <CardDescription className="truncate">
-                          {project.articleNumber && `${project.articleNumber} · `}
-                          {project.customer || "Kein Kunde"}
-                        </CardDescription>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); generateProjectPDF(project as any); }}>
-                            <Download className="w-4 h-4 mr-2" /> PDF exportieren
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleArchiveProject(project); }}>
-                            <Archive className="w-4 h-4 mr-2" /> Archivieren
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" /> Löschen
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    {/* Main Image */}
+                    {galleryImages.length > 0 && (
+                        <div className="relative w-full h-full flex items-center justify-center p-4">
+                            <img 
+                                src={galleryImages[currentImageIndex]?.attachmentContent} 
+                                alt={galleryImages[currentImageIndex]?.attachment}
+                                className="max-w-full max-h-full object-contain rounded-md shadow-2xl" 
+                            />
+                            
+                            {/* Navigation Buttons (only if > 1 image) */}
+                            {galleryImages.length > 1 && (
+                                <>
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white hover:bg-white/10 h-12 w-12 rounded-full"
+                                        onClick={(e) => { e.stopPropagation(); prevImage(); }}
+                                    >
+                                        <ChevronLeft className="h-8 w-8" />
+                                    </Button>
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white hover:bg-white/10 h-12 w-12 rounded-full"
+                                        onClick={(e) => { e.stopPropagation(); nextImage(); }}
+                                    >
+                                        <ChevronRight className="h-8 w-8" />
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Footer Info */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm p-4 text-center">
+                        <p className="font-medium text-lg">{galleryImages[currentImageIndex]?.title || galleryImages[currentImageIndex]?.attachment}</p>
+                        <p className="text-sm text-white/60">
+                            {galleryImages.length > 1 ? `Bild ${currentImageIndex + 1} von ${galleryImages.length} • ` : ''}
+                            Hochgeladen am {new Date(galleryImages[currentImageIndex]?.date || "").toLocaleDateString()}
+                        </p>
                     </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <Badge variant="outline" className={`${STATUS_CONFIG[project.status].color} text-xs`}>
-                        {STATUS_CONFIG[project.status].label}
-                      </Badge>
-                      <span>{checkDone}/7 erledigt</span>
+                </div>
+            </DialogContent>
+        </Dialog>
+  );
+
+  if (!activeProject) {
+      // DASHBOARD VIEW
+      return (
+        <div className="space-y-8 max-w-7xl mx-auto font-sans p-8">
+            <ImageGalleryDialog />
+            <BackupDialog />
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b pb-6">
+                <div>
+                    <div className="flex items-center gap-2">
+                        {selectedCustomer && (
+                            <Button variant="ghost" className="p-0 h-auto font-normal text-muted-foreground hover:text-foreground" onClick={() => setSelectedCustomer(null)}>
+                                Dashboard
+                            </Button>
+                        )}
+                        {selectedCustomer && <span className="text-muted-foreground">/</span>}
+                        <h1 className="text-4xl font-bold tracking-tight text-slate-900">
+                            {selectedCustomer ? selectedCustomer : "Dashboard"}
+                        </h1>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Aktualisiert: {new Date(project.updatedAt).toLocaleDateString("de-DE")}
+                    <p className="text-lg text-slate-500 mt-2">
+                        {selectedCustomer 
+                            ? `Projekte für ${selectedCustomer}` 
+                            : "Ihre Kunden & Produktentwicklungen im Überblick"}
                     </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                    {/* Backup Button removed - moved to global header */}
+                    
+                    <div className="relative w-64">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Suchen..."
+                            className="pl-9"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* CUSTOMER GRID (Only show if no customer selected) */}
+            {!selectedCustomer && !searchTerm && (
+                <div className="space-y-6">
+                    <div className="flex flex-col gap-4">
+                         <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-semibold text-slate-800">Kunden</h2>
+                        </div>
+                        
+                        {/* A-Z Register */}
+                        <div className="flex flex-wrap gap-1 p-2 bg-white rounded-lg border shadow-sm">
+                            <Button 
+                                variant={selectedLetter === null ? "default" : "ghost"} 
+                                size="sm" 
+                                className={`h-7 w-auto px-3 text-xs ${selectedLetter === null ? "" : "text-muted-foreground"}`}
+                                onClick={() => setSelectedLetter(null)}
+                            >
+                                Alle
+                            </Button>
+                            <Separator orientation="vertical" className="h-4 mx-1 self-center" />
+                            {alphabet.map(letter => (
+                                <Button
+                                    key={letter}
+                                    variant={selectedLetter === letter ? "default" : "ghost"}
+                                    size="sm"
+                                    className={`h-7 w-7 p-0 text-xs ${selectedLetter === letter ? "" : "text-muted-foreground"}`}
+                                    onClick={() => setSelectedLetter(selectedLetter === letter ? null : letter)}
+                                    disabled={!customers.some(c => c.toUpperCase().startsWith(letter))}
+                                >
+                                    {letter}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        {/* New Project Card - MOVED HERE */}
+                        <Dialog open={showNewProjectDialog} onOpenChange={(open) => {
+                            setShowNewProjectDialog(open);
+                            // Reset data when opening/closing if needed, but keeping simple
+                        }}>
+                            <DialogTrigger asChild>
+                                <Card className="border-dashed border-2 border-slate-200 bg-slate-50/50 hover:bg-slate-100 hover:border-primary/50 cursor-pointer transition-all flex flex-col items-center justify-center min-h-[200px] group">
+                                    <div className="h-16 w-16 rounded-full bg-white shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                        <Plus className="h-8 w-8 text-primary" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-slate-900">Neues Projekt</h3>
+                                    <p className="text-sm text-slate-500">Starten Sie eine Entwicklung</p>
+                                </Card>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-md">
+                                <DialogHeader>
+                                    <DialogTitle>Neues Projekt anlegen</DialogTitle>
+                                    <DialogDescription>
+                                        Bitte geben Sie die Basisdaten ein.
+                                    </DialogDescription>
+                                </DialogHeader>
+
+                                <div className="space-y-4 py-4">
+                                    <div className="space-y-2">
+                                        <Label>Projekt Name</Label>
+                                        <Input 
+                                            autoFocus
+                                            value={newProjectData.name} 
+                                            onChange={e => setNewProjectData({...newProjectData, name: e.target.value})} 
+                                            placeholder="z.B. Pfefferbeißer 2024" 
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Kunde</Label>
+                                        {/* Simple Combobox / Input with Datalist for now */}
+                                        <div className="relative">
+                                            <Input 
+                                                list="customers-list"
+                                                value={newProjectData.customer}
+                                                onChange={e => setNewProjectData({...newProjectData, customer: e.target.value})}
+                                                placeholder="Kundenname eingeben oder auswählen..."
+                                            />
+                                            <datalist id="customers-list">
+                                                {customers.map(c => <option key={c} value={c} />)}
+                                            </datalist>
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground">Neuen Namen tippen um neuen Kunden anzulegen.</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Artikelnummer (Optional)</Label>
+                                        <Input 
+                                            value={newProjectData.articleNumber} 
+                                            onChange={e => setNewProjectData({...newProjectData, articleNumber: e.target.value})} 
+                                            placeholder="Interner Code" 
+                                        />
+                                    </div>
+                                    
+                                    <div className="space-y-2">
+                                        <Label>Produktidee / Beschreibung (Optional)</Label>
+                                        <Textarea 
+                                            value={newProjectData.productIdea || ""} 
+                                            onChange={e => setNewProjectData({...newProjectData, productIdea: e.target.value})} 
+                                            placeholder="Kurze Beschreibung der Idee..."
+                                            className="min-h-[60px]"
+                                        />
+                                    </div>
+                                    
+                                    <div className="space-y-2">
+                                        <Label>Besondere Kundenabsprachen (Optional)</Label>
+                                        <Textarea 
+                                            value={newProjectData.customerAgreements || ""} 
+                                            onChange={e => setNewProjectData({...newProjectData, customerAgreements: e.target.value})} 
+                                            placeholder="z.B. Nur Bio-Rohwaren, Spezielle Verpackung..."
+                                            className="min-h-[60px]"
+                                        />
+                                    </div>
+                                </div>
+
+                                <DialogFooter>
+                                    <Button onClick={handleCreateProject} disabled={!newProjectData.name || !newProjectData.customer}>Projekt Starten</Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+
+                         {filteredCustomers.map(cust => {
+                             const count = projects.filter(p => (p.customer || "Allgemein") === cust).length;
+                             return (
+                                <Card 
+                                    key={cust} 
+                                    className="cursor-pointer hover:shadow-md transition-all hover:border-primary/50 group"
+                                    onClick={() => setSelectedCustomer(cust)}
+                                >
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-lg font-bold text-slate-700 group-hover:text-primary transition-colors">
+                                            {cust}
+                                        </CardTitle>
+                                        <Briefcase className="h-4 w-4 text-muted-foreground" />
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="text-2xl font-bold">{count}</div>
+                                        <p className="text-xs text-muted-foreground">
+                                            {count === 1 ? "Projekt" : "Projekte"}
+                                        </p>
+                                    </CardContent>
+                                </Card>
+                             );
+                         })}
+                    </div>
+                </div>
+            )}
+
+            {(selectedCustomer || searchTerm) && (
+            <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                     <h2 className="text-xl font-semibold text-slate-800">
+                        {selectedCustomer ? "Projekte" : "Gefundene Projekte"}
+                     </h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {/* Project Cards */}
+                    {filteredProjects.map(project => (
+                        <Card key={project.id} className="cursor-pointer hover:shadow-md transition-all group flex flex-col" onClick={() => setActiveProject(project)}>
+                            <CardHeader className="pb-3 bg-gradient-to-br from-white to-slate-50 border-b">
+                                <div className="flex justify-between items-start">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center justify-between w-full">
+                                             <CardTitle className="text-lg group-hover:text-primary transition-colors">{project.name}</CardTitle>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                            <Badge variant="secondary" className="font-mono bg-white border">{project.articleNumber || "N/A"}</Badge>
+                                            {(!selectedCustomer) && (
+                                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200">
+                                                    {project.customer || "Allgemein"}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                                            <Clock className="w-3 h-3" /> {new Date(project.updatedAt).toLocaleDateString()}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => handleArchiveProject(project.id, e)} title={project.status === 'archived' ? "Wiederherstellen" : "Archivieren"}>
+                                            {project.status === 'archived' ? <History className="w-4 h-4 text-blue-500" /> : <Archive className="w-4 h-4 text-muted-foreground hover:text-orange-500" />}
+                                        </Button>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => handleDeleteProject(project.id, e)}>
+                                            <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="pt-4 flex-1">
+                                <div className="space-y-4">
+                                    <div className="text-xs text-muted-foreground line-clamp-2">
+                                        Letztes Event: {project.timeline[0]?.title}
+                                    </div>
+                                </div>
+                            </CardContent>
+                            <CardFooter className="pt-2 pb-3 text-xs text-muted-foreground border-t bg-slate-50/50 flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <Badge 
+                                        variant="outline" 
+                                        className={`font-medium text-[10px] px-2 py-0.5 border capitalize ${
+                                            project.status === 'archived'
+                                                ? 'bg-orange-50 text-orange-700 border-orange-200'
+                                                : project.status === 'development' 
+                                                ? 'bg-red-50 text-red-700 border-red-200' 
+                                                : project.status === 'production'
+                                                    ? 'bg-green-50 text-green-700 border-green-200'
+                                                    : 'bg-slate-50 text-slate-700 border-slate-200'
+                                        }`}
+                                    >
+                                        {project.status === 'development' ? 'Entwicklung' : 
+                                         project.status === 'production' ? 'Produktion' : 
+                                         project.status === 'archived' ? 'Archiviert' :
+                                         project.status}
+                                    </Badge>
+
+                                    {/* Image Gallery Button */}
+                                    {(() => {
+                                        const imageCount = project.timeline.filter(
+                                            evt => (evt.type === 'file' || evt.type === 'email') && 
+                                            (evt.attachmentType?.startsWith('image/') || evt.attachment?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) && 
+                                            evt.attachmentContent
+                                        ).length;
+
+                                        if (imageCount > 0) {
+                                            return (
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-5 w-5 text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                                                    onClick={(e) => openProjectImages(project, e)}
+                                                    title={`${imageCount} Bild(er) anzeigen`}
+                                                >
+                                                    <ImageIcon className="h-3.5 w-3.5" />
+                                                </Button>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
+                                </div>
+                                {project.checklist && (
+                                    <div className="flex items-center gap-1.5" title="Checklisten-Fortschritt">
+                                        <CheckSquare className="w-3 h-3 text-slate-400" />
+                                        <span className="font-medium text-slate-600">
+                                            {Object.keys(project.checklist).filter(key => key !== 'sensoryCreated' && project.checklist![key as keyof typeof project.checklist]).length}/
+                                            {Object.keys(project.checklist).filter(key => key !== 'sensoryCreated').length}
+                                        </span>
+                                    </div>
+                                )}
+                            </CardFooter>
+                        </Card>
+                    ))}
+                </div>
+            </div>
+            )}
+        </div>
+      );
+  }
+
+  // --- ACTIVE PROJECT VIEW (TIMELINE & DETAILS) ---
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-2rem)] bg-slate-50/30" {...getRootProps()}>
+        <ImageGalleryDialog />
+        <input {...getInputProps()} />
+        
+        {/* Drag Overlay */}
+        {isDragActive && (
+            <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm border-4 border-primary border-dashed flex items-center justify-center pointer-events-none">
+                <div className="bg-white p-8 rounded-xl shadow-xl flex flex-col items-center animate-in zoom-in duration-300">
+                    <UploadCloud className="w-16 h-16 text-primary mb-4" />
+                    <h3 className="text-2xl font-bold text-slate-800">Dateien hier ablegen</h3>
+                    <p className="text-slate-500">Zum Projekt hinzufügen</p>
+                </div>
+            </div>
         )}
-      </ScrollArea>
+        {/* Add Flow Diagram Dialog */}
+        <Dialog open={showAddFlowDialog} onOpenChange={setShowAddFlowDialog}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Neues Fließdiagramm anlegen</DialogTitle>
+                    <DialogDescription>
+                        Erstellen Sie einen neuen Prozess-Standard. Die ID wird automatisch generiert.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                    <Label>Bezeichnung</Label>
+                    <Input 
+                        value={newFlowName}
+                        onChange={(e) => setNewFlowName(e.target.value)}
+                        placeholder="z.B. Spezialverfahren XY"
+                        autoFocus
+                    />
+                </div>
+                <DialogFooter>
+                    <Button onClick={handleAddCustomFlow}>Anlegen</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <header className="bg-white border-b px-6 py-3 flex items-center justify-between sticky top-0 z-20">
+            <div className="flex items-center gap-4">
+                <Button variant="ghost" size="sm" onClick={() => {
+                    if (selectedCustomer) {
+                        // Go back to customer view but keep customer selected (or reset?)
+                        // If I click Dashboard, I expect to go to root.
+                        setActiveProject(null);
+                        // keep selectedCustomer? No, if I click dashboard I usually want full reset?
+                        // But here "Dashboard" button is in Project View.
+                        // If I have a selectedCustomer, maybe I want to go back to THAT customer list?
+                        // Let's assume Dashboard -> Root for now, but user can navigate.
+                    } else {
+                        setActiveProject(null);
+                    }
+                }} className="text-muted-foreground hover:text-foreground">
+                    <LayoutGrid className="mr-2 h-4 w-4" />
+                    Dashboard
+                </Button>
+                {activeProject.customer && (
+                     <>
+                        <Separator orientation="vertical" className="h-6" />
+                        <span className="text-sm font-medium text-slate-500">{activeProject.customer}</span>
+                     </>
+                )}
+                <Separator orientation="vertical" className="h-6" />
+                <div className="group flex flex-col gap-0 cursor-pointer" onClick={openEditDialog}>
+                    <div className="text-xs text-muted-foreground font-medium mb-0 leading-none">
+                        {activeProject.articleNumber}
+                    </div>
+                    <h1 className="text-xl font-bold flex items-center gap-2 mt-1">
+                        {activeProject.name}
+                        <Badge 
+                            variant="outline" 
+                            className={`ml-2 font-medium text-xs px-2.5 py-0.5 border capitalize ${
+                                activeProject.status === 'development' 
+                                    ? 'bg-red-100 text-red-700 border-red-200' 
+                                    : activeProject.status === 'production'
+                                        ? 'bg-green-100 text-green-700 border-green-200'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                        >
+                            {activeProject.status === 'development' ? 'In Entwicklung' : 
+                             activeProject.status === 'production' ? 'In Produktion' : 
+                             activeProject.status}
+                        </Badge>
+                    </h1>
+                    <Edit className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+            </div>
+            <div className="flex items-center gap-2">
+                 
+            </div>
+        </header>
+        
+        {/* Edit Project Dialog */}
+        <Dialog open={showEditProjectDialog} onOpenChange={setShowEditProjectDialog}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Projekt bearbeiten</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>Projekt Name</Label>
+                            <Input 
+                                value={editProjectData.name} 
+                                onChange={e => setEditProjectData({...editProjectData, name: e.target.value})} 
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Kunde</Label>
+                            <Input 
+                                value={editProjectData.customer} 
+                                onChange={e => setEditProjectData({...editProjectData, customer: e.target.value})} 
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>Artikelnummer</Label>
+                            <Input 
+                                value={editProjectData.articleNumber} 
+                                onChange={e => setEditProjectData({...editProjectData, articleNumber: e.target.value})} 
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Status</Label>
+                             <Select 
+                                value={editProjectData.status} 
+                                onValueChange={(v) => setEditProjectData({...editProjectData, status: v})}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="development">In Entwicklung</SelectItem>
+                                    <SelectItem value="production">In Produktion</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label>Produktidee / Beschreibung</Label>
+                        <Textarea 
+                            value={editProjectData.productIdea} 
+                            onChange={e => setEditProjectData({...editProjectData, productIdea: e.target.value})}
+                            placeholder="Kurze Beschreibung der Idee..."
+                            className="min-h-[80px]"
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Produktbild (für Deckblatt)</Label>
+                        <Input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                    const reader = new FileReader();
+                                    reader.onload = (evt) => {
+                                        setEditProjectData({...editProjectData, productImage: evt.target?.result as string});
+                                    };
+                                    reader.readAsDataURL(file);
+                                }
+                            }}
+                        />
+                        {editProjectData.productImage && (
+                            <div className="mt-2 relative w-full h-48 border rounded overflow-hidden group bg-slate-50 flex items-center justify-center">
+                                <img src={editProjectData.productImage} className="max-w-full max-h-full object-contain" alt="Produktvorschau" />
+                                <Button 
+                                    variant="destructive" 
+                                    size="icon" 
+                                    className="absolute top-2 right-2 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                    onClick={() => setEditProjectData({...editProjectData, productImage: undefined})}
+                                >
+                                    <X className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label>Besondere Kundenabsprachen</Label>
+                        <Textarea 
+                            value={editProjectData.customerAgreements} 
+                            onChange={e => setEditProjectData({...editProjectData, customerAgreements: e.target.value})} 
+                            placeholder="z.B. Nur Bio-Rohwaren, Spezielle Verpackung..."
+                            className="min-h-[60px]"
+                        />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button onClick={handleEditProject}>Speichern</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        {/* Translation Dialog */}
+        <Dialog open={showTranslationDialog} onOpenChange={setShowTranslationDialog}>
+            <DialogContent className="max-w-xl h-[50vh] flex flex-col">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Languages className="w-5 h-5 text-primary" />
+                        Übersetzungshilfe
+                    </DialogTitle>
+                    <DialogDescription>
+                        Wählen Sie eine Zielsprache und öffnen Sie DeepL.
+                    </DialogDescription>
+                </DialogHeader>
+                
+                <div className="flex items-center justify-between py-2 border-b mb-4">
+                     <div className="flex-1 flex items-center gap-2">
+                        <Label className="text-sm font-medium">Zielsprache:</Label>
+                        <Select value={targetLanguage} onValueChange={setTargetLanguage}>
+                            <SelectTrigger className="h-8 w-[180px]">
+                                <SelectValue placeholder="Zielsprache" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="en">Englisch (English)</SelectItem>
+                                <SelectItem value="fr">Französisch (Français)</SelectItem>
+                                <SelectItem value="es">Spanisch (Español)</SelectItem>
+                                <SelectItem value="it">Italienisch (Italiano)</SelectItem>
+                                <SelectItem value="pl">Polnisch (Polski)</SelectItem>
+                                <SelectItem value="nl">Niederländisch (Nederlands)</SelectItem>
+                            </SelectContent>
+                        </Select>
+                     </div>
+                </div>
+
+                <div className="flex-1 flex flex-col gap-4 min-h-0">
+                    <div className="flex flex-col gap-2 flex-1">
+                        <Label className="text-xs text-muted-foreground">Originaltext (Zutatenliste)</Label>
+                        <Textarea 
+                            className="flex-1 resize-none bg-slate-50 font-serif text-sm leading-relaxed" 
+                            value={activeProject.latestResult?.labelText || ""}
+                            readOnly
+                        />
+                    </div>
+                </div>
+
+                <DialogFooter className="mt-4 border-t pt-4 flex sm:justify-between">
+                    <Button variant="outline" onClick={() => setShowTranslationDialog(false)}>Schließen</Button>
+                    <div className="flex gap-2">
+                        <Button variant="ghost" onClick={() => navigator.clipboard.writeText(activeProject.latestResult?.labelText || "")}>
+                            <Copy className="w-4 h-4 mr-2" /> Kopieren
+                        </Button>
+                        <Button 
+                            onClick={openDeepL}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                            <Languages className="w-4 h-4 mr-2" />
+                            In DeepL öffnen
+                        </Button>
+                    </div>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+    <div className="flex-1 overflow-hidden">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+                <div className="px-6 py-2 border-b bg-white flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                        <TabsList className="w-fit h-9 bg-transparent p-0 gap-2">
+                            <TabsTrigger 
+                                value="timeline" 
+                                className="gap-2 h-9 px-4 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-none border border-transparent data-[state=active]:border-slate-200 rounded-md transition-all"
+                            >
+                                <Activity className="w-4 h-4"/> Timeline
+                            </TabsTrigger>
+                            <TabsTrigger 
+                                value="recipe" 
+                                className="gap-2 h-9 px-4 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-none border border-transparent data-[state=active]:border-slate-200 rounded-md transition-all"
+                            >
+                                <FlaskConical className="w-4 h-4"/> Rezeptur
+                            </TabsTrigger>
+                            <TabsTrigger 
+                                value="process" 
+                                className="gap-2 h-9 px-4 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-none border border-transparent data-[state=active]:border-slate-200 rounded-md transition-all"
+                            >
+                                <Settings className="w-4 h-4"/> Prozess-Parameter
+                            </TabsTrigger>
+                            <TabsTrigger 
+                                value="sensory" 
+                                className="gap-2 h-9 px-4 data-[state=active]:bg-amber-50 data-[state=active]:text-amber-900 data-[state=active]:shadow-none border border-transparent data-[state=active]:border-amber-200 rounded-md transition-all"
+                            >
+                                <Eye className="w-4 h-4"/> Sensorik & Zubereitung
+                            </TabsTrigger>
+                            {activeProject?.isNewProcess && (
+                                <TabsTrigger 
+                                    value="fmea" 
+                                    className="gap-2 h-9 px-4 data-[state=active]:bg-red-50 data-[state=active]:text-red-900 data-[state=active]:shadow-none border border-transparent data-[state=active]:border-red-200 rounded-md transition-all text-red-700"
+                                >
+                                    <AlertTriangle className="w-4 h-4"/> Risikoanalyse (FMEA)
+                                </TabsTrigger>
+                            )}
+                            <TabsTrigger 
+                                value="docs" 
+                                className="gap-2 h-9 px-4 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-none border border-transparent data-[state=active]:border-slate-200 rounded-md transition-all"
+                            >
+                                <FolderOpen className="w-4 h-4"/> Dokumentenablage
+                            </TabsTrigger>
+                        </TabsList>
+
+                        {/* Checklist Button - Now part of the nav bar visually */}
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                    <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="gap-2 h-9 px-4 text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-transparent hover:border-slate-200 relative rounded-md font-medium text-sm"
+                                >
+                                    <CheckSquare className="w-4 h-4" /> 
+                                    Checkliste
+                                    <span className="ml-1 text-xs text-muted-foreground bg-slate-100 px-1.5 py-0.5 rounded-full border border-slate-200">
+                                        {completedCount}/{totalCount}
+                                    </span>
+                                    {progressPercentage > 0 && (
+                                        <span className="absolute top-0 right-0 flex h-2.5 w-2.5 translate-x-1/4 -translate-y-1/4">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500 border border-white"></span>
+                                        </span>
+                                    )}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80" align="start">
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium leading-none">Projekt-Status</h4>
+                                        <p className="text-sm text-muted-foreground">
+                                            Fortschritt: {progressPercentage}% ({completedCount}/{totalCount})
+                                        </p>
+                                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-green-500 transition-all duration-500 ease-in-out" 
+                                                style={{ width: `${progressPercentage}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id="chk-article" 
+                                                checked={checklist.articleCreated} 
+                                                onCheckedChange={() => handleChecklistChange('articleCreated')}
+                                            />
+                                            <label htmlFor="chk-article" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                                1. Artikelanlage
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id="chk-recipe" 
+                                                checked={checklist.recipeCreated} 
+                                                onCheckedChange={() => handleChecklistChange('recipeCreated')}
+                                            />
+                                            <label htmlFor="chk-recipe" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                                2. Rezeptur
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center space-x-2">
+                                                <Checkbox 
+                                                    id="chk-label" 
+                                                    checked={checklist.labelCreated} 
+                                                    onCheckedChange={() => handleChecklistChange('labelCreated')}
+                                                />
+                                                <label htmlFor="chk-label" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                                    3. Etikett / Deklaration
+                                                </label>
+                                            </div>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowLabelChecklistDialog(true)}>
+                                                <List className="w-4 h-4 text-slate-500" />
+                                            </Button>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id="chk-nutrition" 
+                                                checked={checklist.nutritionCreated} 
+                                                onCheckedChange={() => handleChecklistChange('nutritionCreated')}
+                                            />
+                                            <label htmlFor="chk-nutrition" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                                4. Nährwerte
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id="chk-spec" 
+                                                checked={checklist.specCreated} 
+                                                onCheckedChange={() => handleChecklistChange('specCreated')}
+                                            />
+                                            <label htmlFor="chk-spec" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                                5. Spezifikation
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id="chk-process" 
+                                                checked={checklist.processCreated} 
+                                                onCheckedChange={() => handleChecklistChange('processCreated')}
+                                            />
+                                            <label htmlFor="chk-process" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                                6. Prozessparameter
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id="chk-navision" 
+                                                checked={checklist.navisionCreated} 
+                                                onCheckedChange={() => handleChecklistChange('navisionCreated')}
+                                            />
+                                            <label htmlFor="chk-navision" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                                7. In Navision eingepflegt
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="gap-2 h-9 px-4 text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-transparent hover:border-slate-200 rounded-md font-medium text-sm"
+                        onClick={() => generateProjectPDF(activeProject)}
+                    >
+                        <FileText className="w-4 h-4" /> Projektzusammenfassung PDF
+                    </Button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                    <TabsContent value="timeline" className="mt-0 max-w-5xl mx-auto space-y-6">
+                         {/* Timeline Content - Horizontal View */}
+                        {activeProject.timeline.length === 0 && (
+                            <div className="text-center text-muted-foreground py-8">
+                                Noch keine Ereignisse in der Timeline.
+                            </div>
+                        )}
+
+                        <div className="w-full p-6">
+                            {/* Fixed Horizontal Axis Timeline with Staggered Pins */}
+                            <div className="relative w-full h-[500px] flex items-center justify-center">
+                                
+                                {/* 1. The MAIN CENTRAL AXIS */}
+                                <div className="absolute left-0 right-0 h-1.5 bg-slate-300 rounded-full z-0 w-full"></div>
+                                
+                                {/* 2. Events distributed along the line */}
+                                <div className="absolute inset-0 w-full h-full">
+                                    {(() => {
+                                        const sortedEvents = [...activeProject.timeline].sort((a, b) => {
+                                            const dateA = new Date(a.date).getTime();
+                                            const dateB = new Date(b.date).getTime();
+                                            if (dateA !== dateB) return dateA - dateB;
+                                            return a.id - b.id;
+                                        });
+                                        
+                                        const totalEvents = sortedEvents.length;
+                                        
+                                        return sortedEvents.map((event, index) => {
+                                            const isMilestone = event.type === 'milestone';
+                                            
+                                            // Calculate Position (0% to 100%)
+                                            // Add some padding at start/end so first/last aren't cut off
+                                            // e.g. if 1 event, at 50%. If 2, at 33% and 66%.
+                                            const positionLeft = `${((index + 1) / (totalEvents + 1)) * 100}%`;
+                                            
+                                            // Stagger Logic
+                                            // Basic Alternate: Top / Bottom
+                                            // Advanced Stagger: Top-Short, Bottom-Short, Top-Long, Bottom-Long...
+                                            // Pattern of 4:
+                                            // 0: Top Short
+                                            // 1: Bottom Short
+                                            // 2: Top Long
+                                            // 3: Bottom Long
+                                            
+                                            const staggerPattern = index % 4;
+                                            const isTop = staggerPattern === 0 || staggerPattern === 2;
+                                            const isLong = staggerPattern === 2 || staggerPattern === 3;
+                                            
+                                            // Connector Lengths
+                                            // Short: 40px
+                                            // Long: 120px
+                                            const connectorHeight = isLong ? 'h-32' : 'h-12';
+                                            
+                                            // Bubble Position relative to line
+                                            // If Top: bottom-1/2 (line center) + height
+                                            // If Bottom: top-1/2 + height
+                                            
+                                            return (
+                                                <div 
+                                                    key={event.id} 
+                                                    className="absolute top-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center"
+                                                    style={{ left: positionLeft }}
+                                                >
+                                                    {/* The Vertical Connector Line */}
+                                                    <div 
+                                                        className={`absolute w-0.5 bg-slate-300 -z-10
+                                                            ${isTop ? `bottom-0 mb-0 ${connectorHeight}` : `top-0 mt-0 ${connectorHeight}`}`}
+                                                    ></div>
+                                                    
+                                                    {/* The Node on the Axis */}
+                                                    <div className={`w-4 h-4 rounded-full border-2 border-white shadow-sm z-10
+                                                        ${event.type === 'milestone' ? 'bg-primary' : 'bg-slate-400'}`}>
+                                                    </div>
+
+                                                    {/* The Icon/Bubble at the end of the connector */}
+                                                    <div className={`absolute flex flex-col items-center w-48 transition-all duration-300
+                                                        ${isTop 
+                                                            ? `bottom-full ${isLong ? 'mb-32' : 'mb-12'}` 
+                                                            : `top-full ${isLong ? 'mt-32' : 'mt-12'}`
+                                                        }`}
+                                                    >
+                                                        {/* Node Icon */}
+                                                        <HoverCard openDelay={0} closeDelay={200}>
+                                                            <HoverCardTrigger asChild onClick={() => handleEventClick(event)}>
+                                                                <div className={`relative z-20 w-12 h-12 rounded-full border-4 border-white shadow-md flex items-center justify-center cursor-pointer transition-all duration-300 transform hover:scale-125 hover:rotate-3
+                                                                    ${event.type === 'milestone' ? 'bg-primary text-primary-foreground ring-4 ring-primary/20' : 
+                                                                    event.type === 'file' ? 'bg-blue-500 text-white ring-4 ring-blue-500/10' :
+                                                                    event.type === 'email' ? 'bg-amber-500 text-white ring-4 ring-amber-500/10' :
+                                                                    event.type === 'recipe' ? 'bg-purple-600 text-white ring-4 ring-purple-600/10' :
+                                                                    'bg-slate-500 text-white ring-4 ring-slate-500/10'}
+                                                                    ${isTop ? 'mb-2' : 'mt-2 order-last'}`}>
+                                                                    
+                                                                    {event.type === 'milestone' && <Activity className="h-5 w-5" />}
+                                                                    {event.type === 'recipe' && <FlaskConical className="h-5 w-5" />}
+                                                                    {event.type === 'email' && <Mail className="h-5 w-5" />}
+                                                                    {event.type === 'file' && <FolderOpen className="h-5 w-5" />}
+                                                                </div>
+                                                            </HoverCardTrigger>
+                                                            
+                                                                    <HoverCardContent className="w-80 p-0 overflow-hidden shadow-xl border-slate-200 z-50" side="bottom" sideOffset={10} avoidCollisions={false}>
+                                                                        <div className={`h-1.5 w-full ${event.type === 'milestone' ? 'bg-primary' : event.type === 'file' ? 'bg-blue-500' : event.type === 'email' ? 'bg-amber-500' : event.type === 'recipe' ? 'bg-purple-600' : 'bg-slate-500'}`}></div>
+                                                                        <div className="p-5 bg-white">
+                                                                            <div className="flex justify-between items-start mb-1">
+                                                                                <h4 className="font-bold text-base text-slate-800">{event.title}</h4>
+                                                                                <Button 
+                                                                                    variant="ghost" 
+                                                                                    size="icon" 
+                                                                                    className="h-6 w-6 text-slate-400 hover:text-destructive -mr-2 -mt-1" 
+                                                                                    onClick={(e) => handleDeleteEvent(event.id, e)}
+                                                                                >
+                                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                                </Button>
+                                                                            </div>
+                                                                            <p className="text-sm text-slate-600 mb-4 leading-relaxed">{event.description}</p>
+                                                                            
+                                                                            {/* Mini Attachments Preview */}
+                                                                            {event.attachment && (
+                                                                                <div className="p-2 bg-slate-50 rounded border border-slate-100 mb-3 flex items-center gap-2">
+                                                                                    <div className="bg-white p-1.5 rounded border border-slate-200 text-blue-500">
+                                                                                        <FileText className="w-4 h-4" />
+                                                                                    </div>
+                                                                                    <span className="text-xs font-medium text-slate-700 truncate flex-1">{event.attachment}</span>
+                                                                                </div>
+                                                                            )}
+
+                                                                            <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                                                                                        {event.user.charAt(0)}
+                                                                                    </div>
+                                                                                    <span className="text-xs text-slate-500">{event.user}</span>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <span className="text-xs text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
+                                                                                        {new Date(event.date).toLocaleDateString()}
+                                                                                    </span>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Comments Section */}
+                                                                            <div className="mt-3 pt-3 border-t border-slate-100">
+                                                                                <div className="flex gap-2">
+                                                                                    <input 
+                                                                                        type="text" 
+                                                                                        placeholder="Kommentar..." 
+                                                                                        className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:border-primary"
+                                                                                        onKeyDown={(e) => {
+                                                                                            if (e.key === 'Enter') {
+                                                                                                // Handle comment submit
+                                                                                                e.currentTarget.value = '';
+                                                                                            }
+                                                                                        }}
+                                                                                    />
+                                                                                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0">
+                                                                                        <MessageSquare className="h-3 w-3 text-slate-400" />
+                                                                                    </Button>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </HoverCardContent>
+                                                        </HoverCard>
+
+                                                        {/* Text Label */}
+                                                        <div className={`relative px-3 py-2 rounded-lg shadow-sm border text-center w-auto max-w-full
+                                                            ${isMilestone 
+                                                                ? 'bg-primary text-primary-foreground border-primary' 
+                                                                : 'bg-white text-slate-800 border-slate-200'}`}>
+                                                            
+                                                            <div className="font-bold text-xs leading-tight mb-1">{event.title}</div>
+                                                            <div className={`text-[10px] font-mono opacity-80 ${isMilestone ? 'text-primary-foreground' : 'text-slate-500'}`}>
+                                                                {new Date(event.date).toLocaleDateString()}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="recipe" className="mt-0 max-w-[1600px] mx-auto h-full flex flex-col">
+                        <Tabs defaultValue="editor" className="h-full flex flex-col">
+                            <div className="mb-4 border-b bg-white flex justify-center sticky top-0 z-10">
+                                <TabsList className="bg-transparent p-0 h-auto gap-6">
+                                    <TabsTrigger 
+                                        value="editor" 
+                                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2"
+                                    >
+                                        Rezeptur-Editor
+                                    </TabsTrigger>
+                                    <TabsTrigger 
+                                        value="hierarchy" 
+                                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2"
+                                    >
+                                        Rezeptur-Hierarchie
+                                    </TabsTrigger>
+                                </TabsList>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-1">
+                                <TabsContent value="editor" className="mt-0 h-full">
+                                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 h-full">
+                                        {/* Editor Column - Ingredients Table */}
+                                        <div className="xl:col-span-8 space-y-6">
+                                            <ProjectRecipeEditor 
+                                                initialRecipe={activeProject.currentRecipe || {
+                                                    id: "new", name: activeProject.name, updatedAt: new Date().toISOString(), 
+                                                    ingredients: [], cookingLoss: 0, lossType: 'none'
+                                                }}
+                                                autoSave={true}
+                                                onSave={handleRecipeUpdate}
+                                            />
+                                        </div>
+
+                                        {/* Results Column - Styled like User Screenshot */}
+                                        <div className="xl:col-span-4 space-y-6">
+                                            
+                                            {/* 1. Label Text Box (Fertiger Etikett Text) */}
+                                            <Card className="border-t-4 border-t-primary shadow-sm bg-white">
+                                                <CardHeader className="pb-2">
+                                                    <CardTitle className="text-base flex items-center gap-2 text-slate-800">
+                                                        <FileText className="w-4 h-4 text-primary" /> 
+                                                        Fertiger Etikett-Text
+                                                    </CardTitle>
+                                                    <CardDescription className="text-xs">
+                                                        Vorschau des Zutatenverzeichnisses gemäß QUID-Berechnung.
+                                                    </CardDescription>
+                                                </CardHeader>
+                                                <CardContent className="pb-4">
+                                                    <div className="bg-slate-50 p-4 rounded-md text-sm leading-relaxed border border-slate-200 shadow-inner font-serif min-h-[100px] text-slate-700">
+                                                        {activeProject.latestResult ? activeProject.latestResult.labelText : <span className="text-muted-foreground italic">Berechnung ausstehend...</span>}
+                                                    </div>
+                                                    
+                                                    <div className="grid grid-cols-3 gap-2 mt-4">
+                                                        <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => {
+                                                            setShowTranslationDialog(true);
+                                                            setTranslatedText(""); 
+                                                        }} disabled={!activeProject.latestResult}>
+                                                            <Languages className="w-3.5 h-3.5 mr-2" /> Übersetzen
+                                                        </Button>
+                                                        <Button variant="outline" size="sm" className="w-full text-xs" onClick={copyLabelText} disabled={!activeProject.latestResult}>
+                                                            <Copy className="w-3.5 h-3.5 mr-2" /> Text kopieren
+                                                        </Button>
+                                                        <Button variant="default" size="sm" className="w-full text-xs bg-purple-600 hover:bg-purple-700 text-white" onClick={handleSpecExport} disabled={!activeProject.latestResult}>
+                                                            <FileSpreadsheet className="w-3.5 h-3.5 mr-2" /> Spezifikation
+                                                        </Button>
+                                                    </div>
+
+                                                    {activeProject.latestResult && activeProject.latestResult.warnings.length > 0 && (
+                                                        <div className="mt-4 pt-3 border-t border-slate-100">
+                                                            {activeProject.latestResult.warnings.map((w, i) => (
+                                                                <div key={i} className="text-[11px] text-amber-700 flex items-start gap-1.5 mb-1 bg-amber-50 p-2 rounded border border-amber-100">
+                                                                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" /> {w}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </CardContent>
+                                            </Card>
+
+                                            {/* 2. Nutrition Values (Nährwerte & Chemie) */}
+                                            <Card className="shadow-sm bg-white">
+                                                <CardHeader className="pb-3 border-b border-slate-50">
+                                                    <CardTitle className="text-base flex items-center gap-2 text-slate-800">
+                                                        <FlaskConical className="w-4 h-4 text-red-500" />
+                                                        Nährwerte & Chemie
+                                                    </CardTitle>
+                                                    <CardDescription className="text-xs">
+                                                        Berechnete Werte pro 100g Endprodukt.
+                                                    </CardDescription>
+                                                </CardHeader>
+                                                <CardContent className="pt-0">
+                                                    <div className="text-sm">
+                                                        {/* Header Row */}
+                                                        <div className="flex justify-between py-2 border-b border-slate-100 bg-slate-50/50 -mx-6 px-6 mb-2">
+                                                            <span className="font-semibold text-slate-600 text-xs uppercase tracking-wider">Parameter</span>
+                                                            <span className="font-semibold text-slate-600 text-xs uppercase tracking-wider">pro 100 g</span>
+                                                        </div>
+
+                                                        {activeProject.latestResult ? (
+                                                            <div className="space-y-0">
+                                                                <div className="flex justify-between items-center py-2 border-b border-slate-50">
+                                                                    <span>Energie</span>
+                                                                    <span className="font-mono font-medium">
+                                                                        {Math.round(activeProject.latestResult.nutritionPer100g.energyKj)} kJ / {Math.round(activeProject.latestResult.nutritionPer100g.energyKcal)} kcal
+                                                                    </span>
+                                                                </div>
+                                                                
+                                                                <NutriRow label="Fett" value={activeProject.latestResult.nutritionPer100g.fat} unit="g" />
+                                                                <NutriRow label="davon ges. Fettsäuren" value={activeProject.latestResult.nutritionPer100g.saturatedFat} unit="g" indent />
+                                                                <NutriRow label="Kohlenhydrate" value={activeProject.latestResult.nutritionPer100g.carbohydrates} unit="g" />
+                                                                <NutriRow label="davon Zucker" value={activeProject.latestResult.nutritionPer100g.sugar} unit="g" indent />
+                                                                <NutriRow label="Eiweiß" value={activeProject.latestResult.nutritionPer100g.protein} unit="g" />
+                                                                <div className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
+                                                                    <span>Salz</span>
+                                                                    <span className="font-mono font-medium">{activeProject.latestResult.nutritionPer100g.salt.toFixed(2)} g</span>
+                                                                </div>
+                                                                
+                                                                {/* Extra Technical Data */}
+                                                                <div className="mt-4 pt-2 border-t border-dashed border-slate-200">
+                                                                    <div className="flex justify-between items-center py-1 text-xs text-slate-500">
+                                                                        <span>Fleischanteil (berechnet)</span>
+                                                                        <span className="font-mono font-medium">{(activeProject.latestResult.meatPercentage || 0).toFixed(1)} %</span>
+                                                                    </div>
+                                                                     <div className="flex justify-between items-center py-1 text-xs text-slate-500">
+                                                                        <span>Wasser (kalkulatorisch)</span>
+                                                                        <span className="font-mono font-medium">{(activeProject.latestResult.nutritionPer100g.water || 0).toFixed(1)} g</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-center py-8 text-muted-foreground text-xs italic">
+                                                                Keine Berechnung verfügbar.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+
+                                        </div>
+                                    </div>
+                                </TabsContent>
+
+                                <TabsContent value="hierarchy" className="mt-0 max-w-5xl mx-auto space-y-6">
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded border mb-4">
+                                            <div className="text-sm font-medium text-slate-700 ml-2">Rezeptur-Historie & Vergleich</div>
+                                            <Button 
+                                                variant={compareMode ? "secondary" : "outline"} 
+                                                size="sm" 
+                                                className={compareMode ? "bg-purple-100 text-purple-700 hover:bg-purple-200" : ""}
+                                                onClick={() => {
+                                                    setCompareMode(!compareMode);
+                                                    setSelectedVersions([]);
+                                                }}
+                                            >
+                                                {compareMode ? "Vergleich beenden" : "Versionen vergleichen"}
+                                            </Button>
+                                        </div>
+
+                                        {compareMode && selectedVersions.length === 2 && (
+                                            <div className="flex items-center justify-between bg-purple-50 p-3 rounded border border-purple-200 mb-4 animate-in fade-in slide-in-from-top-2">
+                                                <span className="text-sm text-purple-800">2 Versionen ausgewählt</span>
+                                                <Button size="sm" onClick={() => { /* Comparison is rendered below automatically */ }}>
+                                                    <ArrowLeftRight className="w-4 h-4 mr-2" /> Jetzt vergleichen
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {/* Comparison Dialog Wrapper */}
+                                        {compareMode && selectedVersions.length === 2 && (
+                                            <RecipeComparison 
+                                                oldRecipe={[...selectedVersions].sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())[0]} 
+                                                newRecipe={[...selectedVersions].sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())[1]}
+                                                onClose={() => setSelectedVersions([])} 
+                                            />
+                                        )}
+
+                                         {activeProject.timeline.filter(e => e.type === 'recipe').length === 0 && (
+                                            <div className="text-center text-muted-foreground py-12 border-2 border-dashed rounded-lg">
+                                                <ChefHat className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                                                <p>Noch keine Rezeptur-Versionen gespeichert.</p>
+                                                <p className="text-sm mt-2">Speichern Sie eine "Neue Version" im Rezeptur-Editor.</p>
+                                            </div>
+                                         )}
+
+                                        <div className="relative pl-8 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-0 before:w-0.5 before:bg-slate-200">
+                                            {activeProject.timeline.filter(e => e.type === 'recipe').map((event) => (
+                                                <div key={event.id} className="relative group/timeline-item">
+                                                    <div className={`absolute -left-[29px] top-0 h-8 w-8 rounded-full border-4 border-white shadow-sm flex items-center justify-center z-10 bg-purple-100 text-purple-600`}>
+                                                       <ChefHat className="h-4 w-4" />
+                                                    </div>
+                                                    <Card className={`shadow-sm hover:shadow-md transition-shadow ${compareMode && event.type === 'recipe' && event.value ? 'ring-2 ring-purple-100' : ''}`}>
+                                                        <CardHeader className="py-3 px-4 bg-slate-50/50 border-b">
+                                                            <div className="flex justify-between items-center">
+                                                                <div className="flex items-center gap-3">
+                                                                    {compareMode && event.type === 'recipe' && event.value && (
+                                                                        <Button 
+                                                                            size="sm" 
+                                                                            variant={selectedVersions.some(v => JSON.stringify({...v, updatedAt: event.date}) === JSON.stringify({...JSON.parse(event.value!), updatedAt: event.date})) ? "default" : "outline"}
+                                                                            className={`h-6 text-[10px] px-2 ${selectedVersions.some(v => JSON.stringify({...v, updatedAt: event.date}) === JSON.stringify({...JSON.parse(event.value!), updatedAt: event.date})) ? "bg-purple-600 hover:bg-purple-700" : "text-purple-600 border-purple-200 hover:bg-purple-50"}`}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                // Compare by parsing and setting ID to ensure consistent comparison
+                                                                                const currentEventRecipe = { ...JSON.parse(event.value!), updatedAt: event.date };
+                                                                                const currentEventString = JSON.stringify(currentEventRecipe);
+                                                                                
+                                                                                const isSelected = selectedVersions.some(v => 
+                                                                                    JSON.stringify({...v, updatedAt: event.date}) === currentEventString
+                                                                                );
+                                                                                
+                                                                                if (!isSelected) {
+                                                                                    if (selectedVersions.length < 2) {
+                                                                                        setSelectedVersions(prev => [currentEventRecipe, ...prev]);
+                                                                                    } else {
+                                                                                        toast({ title: "Maximal 2 Versionen", description: "Bitte erst eine Auswahl abwählen.", variant: "destructive" });
+                                                                                    }
+                                                                                } else {
+                                                                                    setSelectedVersions(prev => prev.filter(v => 
+                                                                                        JSON.stringify({...v, updatedAt: event.date}) !== currentEventString
+                                                                                    ));
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {selectedVersions.some(v => JSON.stringify({...v, updatedAt: event.date}) === JSON.stringify({...JSON.parse(event.value!), updatedAt: event.date})) ? (
+                                                                                <>
+                                                                                    <Check className="w-3 h-3 mr-1" />
+                                                                                    Ausgewählt
+                                                                                </>
+                                                                            ) : (
+                                                                                "Auswählen"
+                                                                            )}
+                                                                        </Button>
+                                                                    )}
+                                                                    <span className="font-semibold text-sm">{event.title}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-xs text-muted-foreground">{event.date}</span>
+                                                                    <Button 
+                                                                        variant="ghost" 
+                                                                        size="icon" 
+                                                                        className="h-6 w-6 text-muted-foreground hover:text-destructive" 
+                                                                        onClick={(e) => handleDeleteEvent(event.id, e)}
+                                                                        title="Ereignis löschen"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        </CardHeader>
+                                                        <CardContent className="py-3 px-4 text-sm">
+                                                            <p className="mb-2">{event.description}</p>
+                                                            
+                                                            {/* Recipe Snapshot View */}
+                                                            {event.value && (
+                                                                <div className="mt-3 mb-2">
+                                                                    <Dialog>
+                                                                        <DialogTrigger asChild>
+                                                                            <Button variant="outline" size="sm" className="h-7 text-xs bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100">
+                                                                                <ChefHat className="w-3 h-3 mr-1" /> Rezeptur-Stand ansehen
+                                                                            </Button>
+                                                                        </DialogTrigger>
+                                                                        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+                                                                            <DialogHeader>
+                                                                                <DialogTitle>Historischer Rezepturstand</DialogTitle>
+                                                                                <DialogDescription>
+                                                                                    Stand vom {event.date} - Dies ist eine schreibgeschützte Ansicht.
+                                                                                </DialogDescription>
+                                                                            </DialogHeader>
+                                                                            <div className="flex-1 overflow-auto p-4 bg-slate-50 rounded-md border">
+                                                                                {(() => {
+                                                                                    try {
+                                                                                        const snapshot = JSON.parse(event.value);
+                                                                                        return (
+                                                                                            <div className="pointer-events-none opacity-90 select-none">
+                                                                                                <ProjectRecipeEditor 
+                                                                                                    initialRecipe={snapshot} 
+                                                                                                    onSave={() => {}} 
+                                                                                                    autoSave={false} 
+                                                                                                    readOnly={true}
+                                                                                                />
+                                                                                            </div>
+                                                                                        );
+                                                                                    } catch (e) {
+                                                                                        return <div className="text-red-500">Fehler beim Laden der Historie.</div>;
+                                                                                    }
+                                                                                })()}
+                                                                            </div>
+                                                                            <DialogFooter>
+                                                                                 <Button onClick={() => {
+                                                                                     if(confirm("Diesen alten Stand als aktuelle Rezeptur wiederherstellen?")) {
+                                                                                         try {
+                                                                                             const snapshot = JSON.parse(event.value!);
+                                                                                             handleRecipeUpdate(snapshot, null, true); 
+                                                                                             toast({title: "Wiederhergestellt", description: "Rezeptur wurde auf diesen Stand zurückgesetzt."});
+                                                                                         } catch(e) {}
+                                                                                     }
+                                                                                 }}>
+                                                                                    Als Aktuell wiederherstellen
+                                                                                 </Button>
+                                                                            </DialogFooter>
+                                                                        </DialogContent>
+                                                                    </Dialog>
+                                                                </div>
+                                                            )}
+
+                                                            {event.changes && event.changes.length > 0 && (
+                                                                <div className="bg-slate-50 p-2 rounded text-xs border mt-2">
+                                                                    <div className="font-medium mb-1 text-slate-500">Details:</div>
+                                                                    <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+                                                                        {event.changes.map((c, i) => <li key={i}>{c}</li>)}
+                                                                    </ul>
+                                                                </div>
+                                                            )}
+                                                        </CardContent>
+                                                    </Card>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </TabsContent>
+                            </div>
+                        </Tabs>
+                    </TabsContent>
+
+                    <TabsContent value="process" className="mt-0 max-w-[1600px] mx-auto h-full flex flex-col">
+                        <Tabs defaultValue="editor" className="h-full flex flex-col">
+                            <div className="mb-4 border-b bg-white flex justify-center sticky top-0 z-10">
+                                <TabsList className="bg-transparent p-0 h-auto gap-6">
+                                    <TabsTrigger 
+                                        value="editor" 
+                                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2"
+                                    >
+                                        Prozess-Editor
+                                    </TabsTrigger>
+                                    <TabsTrigger 
+                                        value="hierarchy" 
+                                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2"
+                                    >
+                                        Prozess-Historie
+                                    </TabsTrigger>
+                                </TabsList>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-1">
+                                <TabsContent value="editor" className="mt-0 h-full flex flex-col space-y-6">
+                                    {/* Process Definition Card */}
+                                    <Card className="border-l-4 border-l-blue-500">
+                                        <CardHeader className="pb-3">
+                                            <CardTitle className="text-base">Verfahrens-Check</CardTitle>
+                                            <CardDescription>Definieren Sie den Prozess-Standard für dieses Produkt.</CardDescription>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <Label>Standard-Fließdiagramm</Label>
+                                                        <Button 
+                                                            variant="link" 
+                                                            size="sm" 
+                                                            className="h-auto p-0 text-xs"
+                                                            onClick={() => setShowAddFlowDialog(true)}
+                                                        >
+                                                            <Plus className="w-3 h-3 mr-1" />
+                                                            Neu anlegen
+                                                        </Button>
+                                                    </div>
+                                                    <Select 
+                                                        value={activeProject.processFlow || ""} 
+                                                        onValueChange={(v) => {
+                                                            const updated = { ...activeProject, processFlow: v, updatedAt: new Date().toISOString() };
+                                                            handleUpdateProject(updated);
+                                                        }}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Bitte wählen..." />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="max-h-[300px]">
+                                                            {STANDARD_FLOW_DIAGRAMS.map(fd => (
+                                                                <SelectItem key={fd.id} value={fd.id}>{fd.label}</SelectItem>
+                                                            ))}
+                                                            {customFlowDiagrams.length > 0 && <Separator className="my-2" />}
+                                                            {customFlowDiagrams.map(fd => (
+                                                                <SelectItem key={fd.id} value={fd.id}>{fd.label}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                
+                                                <div className="flex items-center space-x-2 border p-3 rounded-md bg-slate-50">
+                                                    <Checkbox 
+                                                        id="new-process" 
+                                                        checked={activeProject.isNewProcess || false}
+                                                        onCheckedChange={(checked) => {
+                                                            const updated = { ...activeProject, isNewProcess: !!checked, updatedAt: new Date().toISOString() };
+                                                            handleUpdateProject(updated);
+                                                            if(checked) {
+                                                                toast({
+                                                                    title: "FMEA erforderlich",
+                                                                    description: "Da ein neues Verfahren genutzt wird, muss eine Risikoanalyse durchgeführt werden.",
+                                                                    variant: "destructive"
+                                                                });
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div className="grid gap-1.5 leading-none">
+                                                        <label
+                                                            htmlFor="new-process"
+                                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                                        >
+                                                            Neues / Abweichendes Verfahren?
+                                                        </label>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Aktiviert den Reiter "Risikoanalyse (FMEA)".
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="border p-3 rounded-md bg-slate-50 space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center space-x-2">
+                                                            <Checkbox 
+                                                                id="new-ingredients" 
+                                                                checked={activeProject.hasNewIngredients || false}
+                                                                onCheckedChange={(checked) => {
+                                                                    const isChecked = !!checked;
+                                                                    const updated = { ...activeProject, hasNewIngredients: isChecked, updatedAt: new Date().toISOString() };
+                                                                    handleUpdateProject(updated);
+                                                                    
+                                                                    // Automatically open dialog when checked
+                                                                    if (isChecked) {
+                                                                        setShowNewIngredientDialog(true);
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <div className="grid gap-1.5 leading-none">
+                                                                <label
+                                                                    htmlFor="new-ingredients"
+                                                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                                                >
+                                                                    Neue Zutaten / Rohwaren?
+                                                                </label>
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    Erfordert Prüfung auf Allergene & Specs.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Button to open details dialog */}
+                                                        {activeProject.hasNewIngredients && (
+                                                            <Dialog open={showNewIngredientDialog} onOpenChange={setShowNewIngredientDialog}>
+                                                                <DialogTrigger asChild>
+                                                                    <Button variant="outline" size="sm" className="h-8 border-orange-200 text-orange-700 hover:bg-orange-50 hover:text-orange-800">
+                                                                        <AlertTriangle className="w-3.5 h-3.5 mr-2" />
+                                                                        Details & Meldung
+                                                                    </Button>
+                                                                </DialogTrigger>
+                                                                <DialogContent>
+                                                                    <DialogHeader>
+                                                                        <DialogTitle>Neue Zutat melden</DialogTitle>
+                                                                        <DialogDescription>
+                                                                            Bitte geben Sie Details zur neuen Zutat ein und melden Sie diese an die Qualitätssicherung.
+                                                                        </DialogDescription>
+                                                                    </DialogHeader>
+                                                                    <div className="space-y-4 py-4">
+                                                                        <div className="space-y-2">
+                                                                            <Label>Details zur neuen Zutat (Spezifikation, Allergene)</Label>
+                                                                            <Textarea 
+                                                                                className="min-h-[120px]"
+                                                                                placeholder="z.B. Sojabohnen, enthält Soja-Eiweiß..."
+                                                                                value={activeProject.newIngredientDetails || ""}
+                                                                                onChange={(e) => {
+                                                                                    const updated = { ...activeProject, newIngredientDetails: e.target.value, updatedAt: new Date().toISOString() };
+                                                                                    handleUpdateProject(updated);
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                        <div className="bg-orange-50 p-3 rounded-md border border-orange-100 text-sm text-orange-800">
+                                                                            <p className="flex items-center gap-2">
+                                                                                <AlertTriangle className="w-4 h-4" />
+                                                                                <strong>Hinweis:</strong> Die Verwendung neuer Zutaten erfordert zwingend eine Freigabe durch die QS vor Produktionsbeginn.
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <DialogFooter>
+                                                                        <Button 
+                                                                            onClick={() => {
+                                                                                const subject = encodeURIComponent(`Prüfung neue Zutat: ${activeProject.name || "Produkt"} - ${activeProject.articleNumber || "k.A."}`);
+                                                                                const body = encodeURIComponent(
+`Sehr geehrte Qualitätssicherung,
+
+Für das Produkt "${activeProject.name || "Unbekannt"}" (Art.Nr.: ${activeProject.articleNumber || "k.A."}) wurde eine neue Zutat eingetragen, die geprüft werden muss.
+
+Details zur Zutat / Spezifikation / Allergene:
+------------------------------------------------
+${activeProject.newIngredientDetails || "Keine Details angegeben."}
+------------------------------------------------
+
+Bitte um Prüfung der Spezifikationen und Freigabe.
+`
+                                                                                );
+                                                                                window.location.href = `mailto:qs@example.com?subject=${subject}&body=${body}`;
+                                                                                toast({ title: "E-Mail geöffnet", description: "Anfrage an QS wurde erstellt." });
+                                                                            }}
+                                                                        >
+                                                                            <Mail className="w-4 h-4 mr-2" />
+                                                                            An QS melden
+                                                                        </Button>
+                                                                    </DialogFooter>
+                                                                </DialogContent>
+                                                            </Dialog>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+
+                                    <ProcessParametersEditor 
+                                        initialSettings={activeProject.processSettings}
+                                        onSave={handleProcessSettingsSave}
+                                        productName={activeProject.name}
+                                        articleNumber={activeProject.articleNumber}
+                                    />
+                                </TabsContent>
+                                
+                                <TabsContent value="hierarchy" className="mt-0 max-w-5xl mx-auto space-y-6">
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded border mb-4">
+                                            <div className="text-sm font-medium text-slate-700 ml-2">Prozess-Historie & Vergleich</div>
+                                            <Button 
+                                                variant={processCompareMode ? "secondary" : "outline"} 
+                                                size="sm" 
+                                                className={processCompareMode ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : ""}
+                                                onClick={() => {
+                                                    setProcessCompareMode(!processCompareMode);
+                                                    setSelectedProcessVersions([]);
+                                                }}
+                                            >
+                                                {processCompareMode ? "Vergleich beenden" : "Versionen vergleichen"}
+                                            </Button>
+                                        </div>
+
+                                        {processCompareMode && selectedProcessVersions.length === 2 && (
+                                            <div className="flex items-center justify-between bg-blue-50 p-3 rounded border border-blue-200 mb-4 animate-in fade-in slide-in-from-top-2">
+                                                <span className="text-sm text-blue-800">2 Versionen ausgewählt</span>
+                                                <Button size="sm" onClick={() => { /* Comparison is rendered below automatically */ }}>
+                                                    <ArrowLeftRight className="w-4 h-4 mr-2" /> Jetzt vergleichen
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {/* Comparison View */}
+                                        {processCompareMode && selectedProcessVersions.length === 2 && (
+                                            <div className="mb-8">
+                                                <ProcessComparison 
+                                                    oldProcess={parseFloat(selectedProcessVersions[0].version) < parseFloat(selectedProcessVersions[1].version) ? selectedProcessVersions[0] : selectedProcessVersions[1]}
+                                                    newProcess={parseFloat(selectedProcessVersions[0].version) < parseFloat(selectedProcessVersions[1].version) ? selectedProcessVersions[1] : selectedProcessVersions[0]}
+                                                    onClose={() => {
+                                                        setSelectedProcessVersions([]);
+                                                    }} 
+                                                />
+                                            </div>
+                                        )}
+
+                                        {activeProject.timeline.filter(e => e.type === 'parameter').length === 0 && (
+                                            <div className="text-center text-muted-foreground py-12 border-2 border-dashed rounded-lg">
+                                                <Settings className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                                                <p>Noch keine Prozess-Versionen gespeichert.</p>
+                                                <p className="text-sm mt-2">Speichern Sie eine "Neue Version" im Prozess-Editor.</p>
+                                            </div>
+                                        )}
+
+                                        <div className="relative pl-8 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-0 before:w-0.5 before:bg-slate-200">
+                                            {activeProject.timeline.filter(e => e.type === 'parameter').map((event) => {
+                                                const settings = JSON.parse(event.value || "{}") as ProcessSettings;
+                                                const version = settings.version || "1.0";
+                                                
+                                                return (
+                                                    <div key={event.id} className="relative group/timeline-item">
+                                                        <div className={`absolute -left-[29px] top-0 h-8 w-8 rounded-full border-4 border-white shadow-sm flex items-center justify-center z-10 bg-blue-100 text-blue-600`}>
+                                                           <Settings className="h-4 w-4" />
+                                                        </div>
+                                                        <Card className={`shadow-sm hover:shadow-md transition-shadow ${processCompareMode && selectedProcessVersions.some(v => v.version === version) ? 'ring-2 ring-blue-100' : ''}`}>
+                                                            <CardHeader className="py-3 px-4 bg-slate-50/50 border-b">
+                                                                <div className="flex justify-between items-center">
+                                                                    <div className="flex items-center gap-3">
+                                                                        {processCompareMode && (
+                                                                            <Button 
+                                                                                size="sm" 
+                                                                                variant={selectedProcessVersions.some(v => v.version === version) ? "default" : "outline"}
+                                                                                className={`h-6 text-[10px] px-2 ${selectedProcessVersions.some(v => v.version === version) ? "bg-blue-600 hover:bg-blue-700" : "text-blue-600 border-blue-200 hover:bg-blue-50"}`}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    const exists = selectedProcessVersions.find(v => v.version === version);
+                                                                                    if (exists) {
+                                                                                        setSelectedProcessVersions(selectedProcessVersions.filter(v => v.version !== version));
+                                                                                    } else {
+                                                                                        if (selectedProcessVersions.length >= 2) {
+                                                                                            toast({ title: "Limit erreicht", description: "Maximal 2 Versionen vergleichbar.", variant: "destructive" });
+                                                                                            return;
+                                                                                        }
+                                                                                        setSelectedProcessVersions([...selectedProcessVersions, settings]);
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                {selectedProcessVersions.some(v => v.version === version) ? <Check className="w-3 h-3 mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
+                                                                                {selectedProcessVersions.some(v => v.version === version) ? "Ausgewählt" : "Vergleichen"}
+                                                                            </Button>
+                                                                        )}
+                                                                        <span className="font-semibold text-sm">Prozess Version {version}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-xs text-muted-foreground">{event.date}</span>
+                                                                        <Button 
+                                                                            variant="ghost" 
+                                                                            size="icon" 
+                                                                            className="h-6 w-6 text-muted-foreground hover:text-destructive" 
+                                                                            onClick={(e) => handleDeleteEvent(event.id, e)}
+                                                                            title="Version löschen"
+                                                                        >
+                                                                            <Trash2 className="w-3 h-3" />
+                                                                        </Button>
+                                                                    </div>
+                                                                </div>
+                                                            </CardHeader>
+                                                            <CardContent className="py-3 px-4 text-sm">
+                                                                <p className="mb-2">{event.description}</p>
+                                                                
+                                                                {/* Process Snapshot View */}
+                                                                <div className="mt-3 mb-2">
+                                                                    <Dialog>
+                                                                        <DialogTrigger asChild>
+                                                                            <Button variant="outline" size="sm" className="h-7 text-xs bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100">
+                                                                                <Settings className="w-3 h-3 mr-1" /> Prozess-Stand ansehen
+                                                                            </Button>
+                                                                        </DialogTrigger>
+                                                                        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+                                                                            <DialogHeader>
+                                                                                <DialogTitle>Historischer Prozessstand</DialogTitle>
+                                                                                <DialogDescription>
+                                                                                    Stand vom {event.date} - Dies ist eine schreibgeschützte Ansicht.
+                                                                                </DialogDescription>
+                                                                            </DialogHeader>
+                                                                            <div className="flex-1 overflow-auto p-4 bg-slate-50 rounded-md border">
+                                                                                <div className="pointer-events-none opacity-90 select-none">
+                                                                                    <ProcessParametersEditor 
+                                                                                        initialSettings={settings} 
+                                                                                        onSave={() => {}} 
+                                                                                        readOnly={true}
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                            <DialogFooter>
+                                                                                 <Button onClick={() => {
+                                                                                     if(confirm("Diesen alten Stand als aktuelle Prozessparameter wiederherstellen?")) {
+                                                                                         handleProcessSettingsSave(settings, `Wiederhergestellt von v${version}`);
+                                                                                         toast({title: "Wiederhergestellt", description: "Prozessparameter wurden auf diesen Stand zurückgesetzt."});
+                                                                                     }
+                                                                                 }}>
+                                                                                    Als Aktuell wiederherstellen
+                                                                                 </Button>
+                                                                            </DialogFooter>
+                                                                        </DialogContent>
+                                                                    </Dialog>
+                                                                </div>
+
+                                                                <div className="bg-slate-50 p-2 rounded text-xs border mt-2">
+                                                                    <div className="font-medium mb-1 text-slate-500">Details:</div>
+                                                                    <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+                                                                        <li>Erstellt von: {event.user}</li>
+                                                                        <li>Status: {event.status === 'completed' ? 'Abgeschlossen' : 'Entwurf'}</li>
+                                                                    </ul>
+                                                                </div>
+                                                            </CardContent>
+                                                        </Card>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </TabsContent>
+                            </div>
+                        </Tabs>
+                    </TabsContent>
+
+                            <TabsContent value="sensory" className="mt-0 max-w-[1600px] mx-auto h-full flex flex-col space-y-6">
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                    <Card>
+                                        <CardHeader>
+                                            <CardTitle className="flex items-center gap-2">
+                                                <Eye className="w-5 h-5 text-amber-600" />
+                                                Sensorische Eigenschaften
+                                            </CardTitle>
+                                            <CardDescription>
+                                                Beschreiben Sie das Zielprodukt so genau wie möglich.
+                                            </CardDescription>
+                                        </CardHeader>
+                                        <CardContent className="space-y-4">
+                                            <div className="space-y-2">
+                                                <Label>Aussehen / Farbe</Label>
+                                                <Textarea 
+                                                    placeholder="z.B. Goldgelb, gleichmäßige Bräunung..." 
+                                                    value={activeProject.sensory?.appearance || ""}
+                                                    onChange={e => {
+                                                        const updated = { 
+                                                            ...activeProject, 
+                                                            sensory: { ...activeProject.sensory, appearance: e.target.value },
+                                                            updatedAt: new Date().toISOString()
+                                                        };
+                                                        handleUpdateProject(updated);
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>Geruch</Label>
+                                                <Textarea 
+                                                    placeholder="z.B. Mild rauchig, würzig, art-typisch..." 
+                                                    value={activeProject.sensory?.odor || ""}
+                                                    onChange={e => {
+                                                        const updated = { 
+                                                            ...activeProject, 
+                                                            sensory: { ...activeProject.sensory, odor: e.target.value },
+                                                            updatedAt: new Date().toISOString()
+                                                        };
+                                                        handleUpdateProject(updated);
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>Geschmack</Label>
+                                                <Textarea 
+                                                    placeholder="z.B. Salzig, Pfeffernote im Abgang..." 
+                                                    value={activeProject.sensory?.taste || ""}
+                                                    onChange={e => {
+                                                        const updated = { 
+                                                            ...activeProject, 
+                                                            sensory: { ...activeProject.sensory, taste: e.target.value },
+                                                            updatedAt: new Date().toISOString()
+                                                        };
+                                                        handleUpdateProject(updated);
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>Konsistenz / Textur</Label>
+                                                <Textarea 
+                                                    placeholder="z.B. Bissfest, knackig, streichfähig..." 
+                                                    value={activeProject.sensory?.texture || ""}
+                                                    onChange={e => {
+                                                        const updated = { 
+                                                            ...activeProject, 
+                                                            sensory: { ...activeProject.sensory, texture: e.target.value },
+                                                            updatedAt: new Date().toISOString()
+                                                        };
+                                                        handleUpdateProject(updated);
+                                                    }}
+                                                />
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+
+                                    <div className="space-y-6">
+                                        <Card>
+                                            <CardHeader>
+                                                <CardTitle className="flex items-center gap-2">
+                                                    <Ruler className="w-5 h-5 text-slate-600" />
+                                                    Produktspezifikationen & Abmessungen
+                                                </CardTitle>
+                                            </CardHeader>
+                                            <CardContent className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label>Länge / Breite (mm/cm)</Label>
+                                                        <Input 
+                                                            placeholder="z.B. 12 cm" 
+                                                            value={activeProject.sensory?.dimensions?.length || ""}
+                                                            onChange={e => {
+                                                                const updated = { 
+                                                                    ...activeProject, 
+                                                                    sensory: { 
+                                                                        ...activeProject.sensory, 
+                                                                        dimensions: { ...activeProject.sensory?.dimensions, length: e.target.value }
+                                                                    },
+                                                                    updatedAt: new Date().toISOString()
+                                                                };
+                                                                handleUpdateProject(updated);
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Durchmesser / Kaliber</Label>
+                                                        <Input 
+                                                            placeholder="z.B. Kal. 28/30" 
+                                                            value={activeProject.sensory?.dimensions?.diameter || ""}
+                                                            onChange={e => {
+                                                                const updated = { 
+                                                                    ...activeProject, 
+                                                                    sensory: { 
+                                                                        ...activeProject.sensory, 
+                                                                        dimensions: { ...activeProject.sensory?.dimensions, diameter: e.target.value }
+                                                                    },
+                                                                    updatedAt: new Date().toISOString()
+                                                                };
+                                                                handleUpdateProject(updated);
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Stückgewicht (g)</Label>
+                                                        <Input 
+                                                            placeholder="z.B. 80g" 
+                                                            value={activeProject.sensory?.dimensions?.weight || ""}
+                                                            onChange={e => {
+                                                                const updated = { 
+                                                                    ...activeProject, 
+                                                                    sensory: { 
+                                                                        ...activeProject.sensory, 
+                                                                        dimensions: { ...activeProject.sensory?.dimensions, weight: e.target.value }
+                                                                    },
+                                                                    updatedAt: new Date().toISOString()
+                                                                };
+                                                                handleUpdateProject(updated);
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card>
+                                            <CardHeader>
+                                                <CardTitle className="flex items-center gap-2">
+                                                    <ChefHat className="w-5 h-5 text-slate-600" />
+                                                    Zubereitungsempfehlung
+                                                </CardTitle>
+                                            </CardHeader>
+                                            <CardContent>
+                                                <div className="space-y-2">
+                                                    <Label>Zubereitungshinweis für den Endverbraucher</Label>
+                                                    <Textarea 
+                                                        placeholder="z.B. In der Pfanne bei mittlerer Hitze ca. 5 Min. braten..." 
+                                                        className="min-h-[120px]"
+                                                        value={activeProject.sensory?.preparation || ""}
+                                                        onChange={e => {
+                                                            const updated = { 
+                                                                ...activeProject, 
+                                                                sensory: { ...activeProject.sensory, preparation: e.target.value },
+                                                                updatedAt: new Date().toISOString()
+                                                            };
+                                                            handleUpdateProject(updated);
+                                                        }}
+                                                    />
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    </div>
+                                </div>
+                            </TabsContent>
+
+                    <TabsContent value="fmea" className="mt-0 max-w-[1600px] mx-auto h-full flex flex-col space-y-6">
+                        {/* FMEA Logic: Only show if isNewProcess is true OR if there is existing FMEA data */}
+                        {!activeProject.isNewProcess && (!activeProject.fmeaData || activeProject.fmeaData.hazards.length === 0) ? (
+                            <Card className="border-l-4 border-l-slate-300">
+                                <CardHeader>
+                                    <CardTitle className="text-slate-500 flex items-center gap-2">
+                                        <CheckCircle2 className="w-5 h-5" />
+                                        Keine Risikoanalyse erforderlich
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Für dieses Projekt wurde kein neues Verfahren und keine neuen kritischen Rohstoffe angegeben.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm text-muted-foreground mb-4">
+                                        Wenn sich dies ändert, aktivieren Sie bitte im Reiter "Prozess" die Option "Neues Verfahren / Abweichung vom Standard".
+                                    </p>
+                                    <Button 
+                                        variant="outline" 
+                                        onClick={() => {
+                                            const updated = { 
+                                                ...activeProject, 
+                                                isNewProcess: true,
+                                                updatedAt: new Date().toISOString()
+                                            };
+                                            handleUpdateProject(updated);
+                                        }}
+                                    >
+                                        <AlertTriangle className="w-4 h-4 mr-2 text-orange-500" />
+                                        Trotzdem FMEA durchführen
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            <FmeaEditor 
+                                initialData={activeProject.fmeaData}
+                                productName={activeProject.name}
+                                articleNumber={activeProject.articleNumber}
+                                onSave={(data) => {
+                                    const updated = { 
+                                        ...activeProject, 
+                                        fmeaData: data,
+                                        updatedAt: new Date().toISOString()
+                                    };
+                                    handleUpdateProject(updated);
+                                    toast({ title: "FMEA gespeichert", description: "Die Risikoanalyse wurde aktualisiert." });
+                                }}
+                            />
+                        )}
+                    </TabsContent>
+
+                    <TabsContent value="docs" className="mt-0 max-w-[1600px] mx-auto">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Projektdokumente</CardTitle>
+                                <CardDescription>Spezifikationen, Analysen, Bilder</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="border-2 border-dashed rounded-lg p-12 text-center hover:bg-slate-50 transition-colors cursor-pointer">
+                                    <UploadCloud className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                                    <p className="font-medium text-slate-900">Dateien hier ablegen</p>
+                                    <p className="text-sm text-muted-foreground mt-1">PDF, JPG, PNG, XLSX</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                </div>
+            </Tabs>
+
+            {/* Label Checklist Dialog */}
+            <Dialog open={showLabelChecklistDialog} onOpenChange={setShowLabelChecklistDialog}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Checkliste: Etikett / Deklaration</DialogTitle>
+                        <DialogDescription>
+                            Bitte prüfen Sie folgende Pflichtangaben auf dem Etikett.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <ScrollArea className="h-[400px] pr-4">
+                        <div className="grid gap-3 py-2">
+                            {[
+                                { id: "name", label: "Bezeichnung des Lebensmittels" },
+                                { id: "ingredients", label: "Verzeichnis der Zutaten" },
+                                { id: "allergens", label: "Allergene" },
+                                { id: "quantity", label: "Menge wertgebender Zutaten (QUID)" },
+                                { id: "netWeight", label: "Nettofüllmenge" },
+                                { id: "bestBefore", label: "Mindesthaltbarkeits-/ Verbrauchsdatum" },
+                                { id: "storage", label: "Aufbewahrungs-/ Verwendungshinweise" },
+                                { id: "address", label: "Name und Anschrift Lebensmittelunternehmer" },
+                                { id: "origin", label: "Herkunft (wenn vorgesehen)" },
+                                { id: "instructions", label: "Gebrauchsanleitung (falls erforderlich)" },
+                                { id: "nutrition", label: "Nährwertdeklaration" },
+                                { id: "gas", label: "Hinweis auf Schutzgas (falls verwendet)" },
+                            ].map((item) => (
+                                <div key={item.id} className="flex items-center space-x-2 border-b pb-2 last:border-0">
+                                    <Checkbox 
+                                        id={`lbl-${item.id}`}
+                                        checked={labelChecklist[item.id as keyof typeof labelChecklist]}
+                                        onCheckedChange={(checked) => {
+                                            const updatedChecklist = { ...labelChecklist, [item.id]: !!checked };
+                                            setLabelChecklist(updatedChecklist);
+                                            
+                                            if (activeProject) {
+                                                const updatedProject = {
+                                                    ...activeProject,
+                                                    labelChecklist: updatedChecklist,
+                                                    updatedAt: new Date().toISOString()
+                                                };
+                                                handleUpdateProject(updatedProject);
+                                                
+                                                // Auto-check main label checklist if all are checked? 
+                                                // Or maybe just auto-check "Label Created" if at least one is checked?
+                                                // Let's keep it manual for now or auto-check if user checks items.
+                                                if (!checklist.labelCreated) {
+                                                     handleChecklistChange('labelCreated');
+                                                }
+                                            }
+                                        }}
+                                    />
+                                    <label htmlFor={`lbl-${item.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                                        {item.label}
+                                    </label>
+                                </div>
+                            ))}
+                        </div>
+                    </ScrollArea>
+                    <DialogFooter>
+                        <Button onClick={() => setShowLabelChecklistDialog(false)}>Schließen</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div>
     </div>
   );
 }

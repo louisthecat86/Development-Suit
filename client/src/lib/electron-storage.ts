@@ -42,6 +42,7 @@ const JSON_FILE_MAP: Record<string, string> = {
   "quid-recipe-db-clean": "recipes.json",
   "quid-custom-flows": "custom-flows.json",
   "quid-first-visit-done": "settings.json",
+  "quid-landing-seen": "landing-seen.json",
 };
 
 // Write-through cache to avoid async issues with synchronous localStorage API
