@@ -23,6 +23,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { SavedRecipe } from "@/lib/recipe-db";
 import { QuidResult } from "@/lib/quid-calculator";
+import { SpecExportButton } from "@/components/spec-export-button";
 import { ProjectRecipeEditor } from "@/components/project-recipe-editor";
 import { RecipeComparison } from "@/components/recipe-comparison";
 import {
@@ -2361,10 +2362,14 @@ export default function ProductDashboard() {
                                                         <Button variant="outline" size="sm" className="w-full text-xs" onClick={copyLabelText} disabled={!activeProject.latestResult}>
                                                             <Copy className="w-3.5 h-3.5 mr-2" /> Text kopieren
                                                         </Button>
-                                                        <Button variant="default" size="sm" className="w-full text-xs bg-purple-600 hover:bg-purple-700 text-white" onClick={handleSpecExport} disabled={!activeProject.latestResult}>
-                                                            <FileSpreadsheet className="w-3.5 h-3.5 mr-2" /> Spezifikation
-                                                        </Button>
-                                                    </div>
+                                                        <SpecExportButton
+                                                            recipeName={activeProject.name}
+                                                            result={activeProject.latestResult}
+                                                            recipe={activeProject.currentRecipe}
+                                                            variant="default"
+                                                            size="sm"
+                                                            className="w-full text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                                                        />
 
                                                     {activeProject.latestResult && activeProject.latestResult.warnings.length > 0 && (
                                                         <div className="mt-4 pt-3 border-t border-slate-100">
