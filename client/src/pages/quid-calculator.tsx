@@ -83,10 +83,10 @@ export default function QuidCalculator() {
   const loadRecipe = (recipe: SavedRecipe) => {
     setRecipeName(recipe.name);
     setArticleNumber(recipe.articleNumber || "");
-    setIngredients(recipe.ingredients.map(ing => ({
+   setIngredients(recipe.ingredients.map((ing: any) => ({
         ...ing,
         // Ensure legacy compatibility or defaults
-        id: ing.id || crypto.randomUUID(),
+      id: ing.id || crypto.randomUUID(),
         rawWeight: ing.rawWeight || 0,
         quidRequired: ing.quidRequired ?? true,
         isMeat: ing.isMeat ?? false,
@@ -118,13 +118,13 @@ export default function QuidCalculator() {
         toast({ title: "Verarbeite Unterrezeptur...", description: `Füge "${recipeItem.name}" als Block hinzu.` });
         
         // 1. Calculate Nutrition for the Sub-Recipe
-        const subIngredientsForCalc: Ingredient[] = recipeItem.ingredients.map(ri => ({
+      const subIngredientsForCalc: Ingredient[] = recipeItem.ingredients.map((ri: any) => ({
             ...ri,
             id: crypto.randomUUID(),
             // Fix: Preserve original labelName if available
-            labelName: ri.labelName || ri.name,
+         labelName: ri.labelName || ri.name,
             articleNumber: "",
-            subIngredients: ri.subIngredients || "",
+         subIngredients: ri.subIngredients || "",
             meatSpecies: ri.meatSpecies,
             nutrition: ri.nutrition || {},
             processingAids: ri.processingAids,

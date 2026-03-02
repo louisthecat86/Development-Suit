@@ -3,7 +3,10 @@ import { MeatSpecies, NutritionalValues } from "./quid-calculator";
 import { useState, useEffect } from "react";
 
 export interface RecipeIngredient {
+  id?: string;
   name: string;
+  labelName?: string;
+  articleNumber?: string;
   rawWeight: number;
   quidRequired: boolean;
   isMeat: boolean;
@@ -12,6 +15,7 @@ export interface RecipeIngredient {
   connectiveTissuePercent?: number;
   meatProteinLimit?: number;
   nutrition?: Partial<NutritionalValues>;
+  subIngredients?: string;
   processingAids?: string; // NEW
   allergens?: string[]; // NEW
 }
