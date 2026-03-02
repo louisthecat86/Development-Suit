@@ -54,6 +54,11 @@ export function SpecExportButton({
     setLoading(true);
     try {
       const deeplApiKey = lang === "en" ? (getDeepLApiKey() || undefined) : undefined;
+      
+      if (lang === "en" && !deeplApiKey) {
+        toast({ title: "Hinweis", description: "Kein DeepL API-Key hinterlegt. Etikettentext wird nicht übersetzt." });
+      }
+      
       await generateSpecificationExcel(recipeName, result, recipe, lang, {
         articleNumber,
         deeplApiKey,
@@ -63,7 +68,7 @@ export function SpecExportButton({
       const msg = lang === "en" && deeplApiKey
         ? "Englische Spezifikation mit DeepL-Übersetzung erstellt."
         : lang === "en"
-          ? "Englische Spezifikation erstellt (ohne automatische Übersetzung des Etikettentexts)."
+          ? "Englische Spezifikation erstellt (Etikettentext nicht übersetzt)."
           : "Deutsche Spezifikation erstellt.";
       toast({ title: "Export erfolgreich", description: msg });
     } catch (e) {

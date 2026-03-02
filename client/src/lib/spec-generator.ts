@@ -5,8 +5,7 @@ import { SavedRecipe } from "./recipe-db";
 
 export type SpecLanguage = "de" | "en";
 
-// DeepL Free API endpoint
-const DEEPL_API_URL = "https://api-free.deepl.com/v2/translate";
+// DeepL API - auto-detect Free (:fx suffix) vs Pro
 
 // Cell mappings per language (based on actual template analysis)
 const CELL_MAP = {
@@ -89,6 +88,13 @@ const ALLERGEN_KEYS = [
   { offset: 8, keys: ["sulfit", "sulfite", "so2", "schwefeldioxid", "sulphur"] },
 ];
 
+// DeepL API - auto-detect Free (:fx suffix) vs Pro
+function getDeepLUrl(apiKey: string): string {
+  return apiKey.endsWith(":fx")
+    ? "https://api-free.deepl.com/v2/translate"
+    : "https://api.deepl.com/v2/translate";
+}
+
 // --- DeepL Translation ---
 async function translateWithDeepL(
   text: string,
@@ -96,19 +102,34 @@ async function translateWithDeepL(
   apiKey: string
 ): Promise<string | null> {
   try {
-    const response = await fetch(DEEPL_API_URL, {
+    const url = getDeepLUrl(apiKey);
+    console.log(`DeepL: Translating ${text.length} chars to ${targetLang} via ${url}`);
+    
+    const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { 
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": `DeepL-Auth-Key ${apiKey}`,
+      },
       body: new URLSearchParams({
-        auth_key: apiKey,
         text: text,
         source_lang: "DE",
-        target_lang: targetLang.toUpperCase(),
+        target_lang: targetLang.toUpperCase() === "EN" ? "EN-GB" : targetLang.toUpperCase(),
       }),
     });
-    if (!response.ok) return null;
+    
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`DeepL API error ${response.status}: ${errText}`);
+      return null;
+    }
+    
     const data = await response.json();
-    return data?.translations?.[0]?.text || null;
+    const translated = data?.translations?.[0]?.text;
+    if (translated) {
+      console.log("DeepL: Translation successful");
+    }
+    return translated || null;
   } catch (e) {
     console.error("DeepL translation failed:", e);
     return null;
@@ -208,8 +229,16 @@ export async function generateSpecificationExcel(
 
   // If English and DeepL key provided, translate the ingredient text
   if (lang === "en" && options?.deeplApiKey && ingredientText) {
+    console.log("DeepL: API key present, attempting translation...");
     const translated = await translateWithDeepL(ingredientText, "EN", options.deeplApiKey);
-    if (translated) ingredientText = translated;
+    if (translated) {
+      ingredientText = translated;
+      console.log("DeepL: Ingredient text translated successfully");
+    } else {
+      console.warn("DeepL: Translation returned null, using original German text");
+    }
+  } else if (lang === "en") {
+    console.log("DeepL: No API key provided, skipping translation");
   }
 
   set(map.ingredients, ingredientText);
