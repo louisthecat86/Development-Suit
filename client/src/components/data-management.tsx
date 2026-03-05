@@ -29,6 +29,7 @@ import { saveAs } from "file-saver";
 import CryptoJS from "crypto-js";
 import { LibraryIngredient, getLibraryIngredients } from "@/lib/ingredient-db";
 import { SavedRecipe, getLibraryRecipes } from "@/lib/recipe-db";
+import { getDeepLApiKey, setDeepLApiKey } from "@/lib/spec-generator";
 
 // ... (IngredientPicker component remains unchanged)
 export function IngredientPicker({ onSelect }: { onSelect: (ing: LibraryIngredient | SavedRecipe) => void }) {
@@ -141,7 +142,7 @@ export function IngredientPicker({ onSelect }: { onSelect: (ing: LibraryIngredie
                             <div key={rec.id} 
                                  className="flex items-center justify-between p-3 hover:bg-muted cursor-pointer rounded border bg-purple-50/50 border-purple-100"
                                  onClick={() => {
-                                     onSelect({ isRecipe: true, item: rec });
+                                     onSelect({ isRecipe: true, item: rec } as any);
                                      setOpen(false);
                                      setSearchTerm(""); // Reset search
                                  }}
@@ -335,7 +336,7 @@ export function DataManagement() {
           "Protein (%)": ing.nutrition?.protein ?? "",
           "Wasser (%)": ing.nutrition?.water ?? "",
           "Salz (%)": ing.nutrition?.salt ?? "",
-          "BEFFE (%)": ing.nutrition?.beffe ?? "",
+          "BEFFE (%)": (ing.nutrition as any)?.beffe ?? "",
           "Energie (kJ)": (ing.nutrition as any)?.energyKj ?? "",
           "Energie (kcal)": (ing.nutrition as any)?.energyKcal ?? "",
           "Ges. Fettsäuren (%)": (ing.nutrition as any)?.saturatedFat ?? "",
@@ -349,6 +350,12 @@ export function DataManagement() {
 
       const recipesData = JSON.stringify(getData("quid-recipe-db-clean") || []);
       if (recipesData) zip.file("recipes.json", recipesData);
+
+      // 2b. DeepL API Key
+      const deeplKey = getDeepLApiKey();
+      if (deeplKey) {
+          zip.file("deepl-key.json", JSON.stringify({ apiKey: deeplKey }));
+      }
 
       // 3. Readable Folder Structure (Customers -> Projects)
       const customersFolder = zip.folder("Kunden");
@@ -382,7 +389,7 @@ export function DataManagement() {
                               const fileInfo = await window.electronAPI.loadProjectFile(event.attachmentPath);
                               if (fileInfo?.data) {
                                   contentDataForHash = fileInfo.data;
-                                  const hash = hashAttachmentContent(contentDataForHash, event.attachment);
+                                  const hash = hashAttachmentContent(contentDataForHash!, event.attachment || "unknown");
                                   const existingPath = attachmentHashToZipPath.get(hash);
                                   if (existingPath) {
                                       leanProjects[projectIndex].timeline[eventIndex].attachmentRef = existingPath;
@@ -405,7 +412,7 @@ export function DataManagement() {
                       // Browser/legacy: base64 content inline
                       else if (event.attachmentContent) {
                           contentDataForHash = event.attachmentContent;
-                          const hash = hashAttachmentContent(contentDataForHash, event.attachment);
+                          const hash = hashAttachmentContent(contentDataForHash!, event.attachment || "unknown");
                           const existingPath = attachmentHashToZipPath.get(hash);
                           if (existingPath) {
                               leanProjects[projectIndex].timeline[eventIndex].attachmentRef = existingPath;
@@ -590,6 +597,20 @@ export function DataManagement() {
                       await setDataAsync("quid-recipe-db-clean", JSON.parse(content));
                       window.dispatchEvent(new Event("recipe-storage-update"));
                       restoredCount++;
+                  }
+
+                  // Restore DeepL API Key
+                  const deeplFile = zip.file("deepl-key.json");
+                  if (deeplFile) {
+                      try {
+                          const content = await deeplFile.async("string");
+                          const parsed = JSON.parse(content);
+                          if (parsed.apiKey) {
+                              setDeepLApiKey(parsed.apiKey);
+                          }
+                      } catch (err) {
+                          console.error("Failed to restore DeepL API key:", err);
+                      }
                   }
 
                   // In Electron: also restore files from Kunden/ folder

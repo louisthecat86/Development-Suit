@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash2, AlertTriangle, ArrowRight, Save, GitBranch, CheckCircle2, XCircle, HelpCircle, FileText, Mail } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, ArrowRight, Save, GitBranch, CheckCircle2, XCircle, HelpCircle, FileText, Mail, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -23,6 +23,12 @@ export interface FmeaRow {
     measures: string;
 }
 
+export interface DecisionDetail {
+    questionKey: string;
+    questionText: string;
+    answer: boolean;
+}
+
 export interface CcpRow {
     id: string;
     step: string;
@@ -34,7 +40,9 @@ export interface CcpRow {
     q4: boolean | null;
     result: 'CCP' | 'CP' | 'KP';
     controlMeasures: string;
-    decisionPath?: string; // To store the path taken (e.g., "Y-N-Y")
+    decisionPath?: string;
+    decisionDetails?: DecisionDetail[];
+    questionComments?: Record<string, string>;
 }
 
 export interface FmeaData {
@@ -86,6 +94,7 @@ export function FmeaEditor({ initialData, onSave, productName, articleNumber }: 
     
     // Wizard State
     const [showWizard, setShowWizard] = useState(false);
+    const [expandedCcpRows, setExpandedCcpRows] = useState<Set<string>>(new Set());
     const [currentWizardStep, setCurrentWizardStep] = useState<string>("q1");
     const [wizardData, setWizardData] = useState<{
         hazardId?: string;
@@ -94,6 +103,9 @@ export function FmeaEditor({ initialData, onSave, productName, articleNumber }: 
         stepName?: string;
         answers: Record<string, boolean>;
         measures?: string;
+        severity?: number;
+        occurrence?: number;
+        isFullProcess?: boolean;
     }>({ answers: {} });
 
     const addHazardRow = () => {
@@ -145,6 +157,23 @@ export function FmeaEditor({ initialData, onSave, productName, articleNumber }: 
         setCcps(ccps.map(row => {
             if (row.id === id) {
                 return { ...row, [field]: value };
+            }
+            return row;
+        }));
+    };
+
+    const toggleCcpExpanded = (id: string) => {
+        setExpandedCcpRows(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const updateQuestionComment = (ccpId: string, qKey: string, comment: string) => {
+        setCcps(ccps.map(row => {
+            if (row.id === ccpId) {
+                return { ...row, questionComments: { ...(row.questionComments || {}), [qKey]: comment } };
             }
             return row;
         }));
@@ -215,6 +244,15 @@ export function FmeaEditor({ initialData, onSave, productName, articleNumber }: 
     };
 
     const finishWizard = (result: 'CCP' | 'CP' | 'KP', measures: string) => {
+        // Build decision details from the wizard answers
+        const details: DecisionDetail[] = [];
+        for (const key of Object.keys(wizardData.answers)) {
+            const node = DECISION_TREE[key as keyof typeof DECISION_TREE];
+            if (node) {
+                details.push({ questionKey: key, questionText: node.text, answer: wizardData.answers[key] });
+            }
+        }
+
         // 1. Create Hazard Row
         const newHazard: FmeaRow = {
             id: Date.now().toString(),
@@ -242,7 +280,9 @@ export function FmeaEditor({ initialData, onSave, productName, articleNumber }: 
                 q3: wizardData.answers['q3'] ?? null,
                 q4: wizardData.answers['q4'] ?? null,
                 result: result,
-                controlMeasures: measures
+                controlMeasures: measures,
+                decisionDetails: details,
+                questionComments: {}
             };
             setCcps(prev => [...prev, newCcp]);
         }
@@ -459,8 +499,9 @@ Bitte um Prüfung und Freigabe.
                                 <Table>
                                     <TableHeader className="bg-slate-50">
                                         <TableRow>
-                                            <TableHead className="w-[15%]">Prozessstufe</TableHead>
-                                            <TableHead className="w-[20%]">Mögliche Gefahr</TableHead>
+                                            <TableHead className="w-[3%]"></TableHead>
+                                            <TableHead className="w-[14%]">Prozessstufe</TableHead>
+                                            <TableHead className="w-[18%]">Mögliche Gefahr</TableHead>
                                             <TableHead className="w-[5%] text-center" title="Gesteuerte Gefahr?">F1</TableHead>
                                             <TableHead className="w-[5%] text-center" title="Gefahr eliminiert?">F2</TableHead>
                                             <TableHead className="w-[5%] text-center" title="Risikoüberschreitung möglich?">F3</TableHead>
@@ -473,13 +514,23 @@ Bitte um Prüfung und Freigabe.
                                     <TableBody>
                                         {ccps.length === 0 && (
                                             <TableRow>
-                                                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                                                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                                                     Keine CCP-Prüfungen. Nur notwendig bei Risiko &ge; 6.
                                                 </TableCell>
                                             </TableRow>
                                         )}
-                                        {ccps.map((row) => (
-                                            <TableRow key={row.id}>
+                                        {ccps.map((row) => {
+                                            const isExpanded = expandedCcpRows.has(row.id);
+                                            const hasDetails = row.decisionDetails && row.decisionDetails.length > 0;
+                                            
+                                            return (
+                                                <React.Fragment key={row.id}>
+                                                <TableRow className={isExpanded ? "border-b-0 bg-slate-50/30" : ""}>
+                                                <TableCell className="p-1 text-center w-[3%]">
+                                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleCcpExpanded(row.id)}>
+                                                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                    </Button>
+                                                </TableCell>
                                                 <TableCell>
                                                     <Input 
                                                         value={row.step} 
@@ -541,7 +592,89 @@ Bitte um Prüfung und Freigabe.
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
-                                        ))}
+                                            
+                                            {/* Expandable Decision Details & Comments Row */}
+                                            {isExpanded && (
+                                                <TableRow className="bg-blue-50/30 hover:bg-blue-50/50">
+                                                    <TableCell colSpan={10} className="p-0">
+                                                        <div className="px-6 py-4 space-y-3 border-t border-blue-100">
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <GitBranch className="w-4 h-4 text-blue-600" />
+                                                                <span className="text-sm font-semibold text-blue-800">Entscheidungsdetails & Kommentare</span>
+                                                            </div>
+                                                            
+                                                            {hasDetails ? (
+                                                                <div className="space-y-3">
+                                                                    {row.decisionDetails!.map((detail) => (
+                                                                        <div key={detail.questionKey} className="bg-white rounded-lg border p-3 space-y-2">
+                                                                            <div className="flex items-start gap-3">
+                                                                                <Badge variant="outline" className="text-xs shrink-0 mt-0.5">
+                                                                                    {detail.questionKey.toUpperCase()}
+                                                                                </Badge>
+                                                                                <div className="flex-1">
+                                                                                    <p className="text-sm font-medium text-slate-800">{detail.questionText}</p>
+                                                                                    <div className="mt-1">
+                                                                                        {detail.answer ? (
+                                                                                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                                                                                                <CheckCircle2 className="w-3 h-3" /> JA
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded">
+                                                                                                <XCircle className="w-3 h-3" /> NEIN
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="ml-10">
+                                                                                <div className="flex items-center gap-1 mb-1">
+                                                                                    <MessageSquare className="w-3 h-3 text-slate-400" />
+                                                                                    <span className="text-xs text-slate-500">Kommentar:</span>
+                                                                                </div>
+                                                                                <Textarea
+                                                                                    value={row.questionComments?.[detail.questionKey] || ""}
+                                                                                    onChange={(e) => updateQuestionComment(row.id, detail.questionKey, e.target.value)}
+                                                                                    placeholder="Entscheidungsdetails dokumentieren..."
+                                                                                    className="min-h-[50px] text-sm bg-slate-50 border-slate-200"
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-sm text-slate-500 italic bg-white rounded-lg border p-4">
+                                                                    <p className="mb-3">Keine automatischen Entscheidungsdetails vorhanden. Kommentare können manuell zu den gesetzten Fragen hinzugefügt werden:</p>
+                                                                    <div className="space-y-2">
+                                                                        {(['q1', 'q2', 'q3', 'q4'] as const).map(qKey => (
+                                                                            row[qKey] !== null ? (
+                                                                                <div key={qKey}>
+                                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                                        <Badge variant="outline" className="text-xs">{qKey.toUpperCase()}</Badge>
+                                                                                        {row[qKey] === true ? (
+                                                                                            <span className="text-xs text-green-600 font-medium">JA</span>
+                                                                                        ) : (
+                                                                                            <span className="text-xs text-red-600 font-medium">NEIN</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <Textarea
+                                                                                        value={row.questionComments?.[qKey] || ""}
+                                                                                        onChange={(e) => updateQuestionComment(row.id, qKey, e.target.value)}
+                                                                                        placeholder="Kommentar..."
+                                                                                        className="min-h-[40px] text-sm bg-slate-50 border-slate-200"
+                                                                                    />
+                                                                                </div>
+                                                                            ) : null
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                            </React.Fragment>
+                                            );
+                                        })}
                                     </TableBody>
                                 </Table>
                                 <div className="p-2 bg-slate-50 border-t">

@@ -111,22 +111,18 @@ export default function StatisticsPage() {
     const statusData = useMemo(() => {
         const counts = {
             development: 0,
-            validation: 0,
             production: 0,
-            archived: 0
         };
 
         projects.forEach(p => {
-            if (counts[p.status] !== undefined) {
-                counts[p.status]++;
+            if (p.status === 'development' || p.status === 'production') {
+                counts[p.status as 'development' | 'production']++;
             }
         });
 
         return [
             { name: 'In Entwicklung', value: counts.development, color: '#3b82f6' },
-            { name: 'Validierung', value: counts.validation, color: '#f59e0b' },
             { name: 'Produktion', value: counts.production, color: '#22c55e' },
-            { name: 'Archiviert', value: counts.archived, color: '#64748b' },
         ];
     }, [projects]);
 
