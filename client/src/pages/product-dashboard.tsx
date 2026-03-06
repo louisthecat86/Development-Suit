@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { generateSpecificationExcel } from "@/lib/spec-generator";
+import { generateSpecificationExcel, setDeepLApiKey } from "@/lib/spec-generator";
 import { generateProjectPDF } from "@/lib/pdf-generator";
 import {
   DropdownMenu,
@@ -838,71 +838,65 @@ export default function ProductDashboard() {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      const zip = await JSZip.loadAsync(file);
+      try {
+          const zip = await JSZip.loadAsync(file);
+          let restoredCount = 0;
 
-      // Restore DeepL API Key
-      const deeplFile = zip.file("deepl-key.json");
-      if (deeplFile) {
-          const key = await deeplFile.async("string");
-          setDeepLApiKey(key.trim());
-      }
+          // Restore DeepL API Key
+          const deeplFile = zip.file("deepl-key.json");
+          if (deeplFile) {
+              try {
+                  const keyContent = await deeplFile.async("string");
+                  const parsed = JSON.parse(keyContent);
+                  if (parsed.apiKey) {
+                      setDeepLApiKey(parsed.apiKey);
+                  } else if (typeof parsed === "string") {
+                      setDeepLApiKey(parsed.trim());
+                  }
+              } catch {
+                  // Legacy format: plain string
+                  const raw = await deeplFile.async("string");
+                  if (raw.trim()) setDeepLApiKey(raw.trim());
+              }
+          }
 
-
-
-      const parseBool = (value: any): boolean => {
-          if (typeof value === "boolean") return value;
-          const v = String(value ?? "").trim().toLowerCase();
-          return ["ja", "true", "1", "x", "yes"].includes(v);
-      };
-
-      const parseNum = (value: any): number | undefined => {
-          if (value === null || value === undefined || value === "") return undefined;
-          const normalized = String(value).replace(",", ".");
-          const n = Number(normalized);
-          return Number.isFinite(n) ? n : undefined;
-      };
-
-      const parseList = (value: any): string[] | undefined => {
-          const raw = String(value ?? "").trim();
-          if (!raw) return undefined;
-          const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
-          return items.length > 0 ? items : undefined;
-      };
-
-      const toText = (value: any): string | undefined => {
-          const s = String(value ?? "").trim();
-          return s ? s : undefined;
-      };
-
-      const normalizeIngredientsFromExcelRows = (rows: any[]) => {
-          return rows
-              .map((row) => {
+          // Helper functions for ingredient normalization
+          const parseBool = (value: any): boolean => {
+              if (typeof value === "boolean") return value;
+              const v = String(value ?? "").trim().toLowerCase();
+              return ["ja", "true", "1", "x", "yes"].includes(v);
+          };
+          const parseNum = (value: any): number | undefined => {
+              if (value === null || value === undefined || value === "") return undefined;
+              const normalized = String(value).replace(",", ".");
+              const n = Number(normalized);
+              return Number.isFinite(n) ? n : undefined;
+          };
+          const parseList = (value: any): string[] | undefined => {
+              const raw = String(value ?? "").trim();
+              if (!raw) return undefined;
+              const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
+              return items.length > 0 ? items : undefined;
+          };
+          const toText = (value: any): string | undefined => {
+              const s = String(value ?? "").trim();
+              return s ? s : undefined;
+          };
+          const normalizeIngredientsFromExcelRows = (rows: any[]) => {
+              return rows.map((row) => {
                   const name = toText(row["Name"] ?? row["name"]);
                   if (!name) return null;
-
-                  const fat = parseNum(row["Fett (%)"] ?? row["Fett"]);
-                  const protein = parseNum(row["Protein (%)"] ?? row["Protein"]);
-                  const water = parseNum(row["Wasser (%)"] ?? row["Wasser"]);
-                  const salt = parseNum(row["Salz (%)"] ?? row["Salz"]);
-                  const beffe = parseNum(row["BEFFE (%)"] ?? row["BEFFE"]);
-                  const energyKj = parseNum(row["Energie (kJ)"] ?? row["Energy (kJ)"]);
-                  const energyKcal = parseNum(row["Energie (kcal)"] ?? row["Energy (kcal)"]);
-                  const saturatedFat = parseNum(row["Ges. Fettsäuren (%)"] ?? row["Saturated fat (%)"]);
-                  const carbohydrates = parseNum(row["Kohlenhydrate (%)"] ?? row["Carbohydrates (%)"]);
-                  const sugar = parseNum(row["Zucker (%)"] ?? row["Sugar (%)"]);
-
                   const nutrition: any = {};
-                  if (fat !== undefined) nutrition.fat = fat;
-                  if (protein !== undefined) nutrition.protein = protein;
-                  if (water !== undefined) nutrition.water = water;
-                  if (salt !== undefined) nutrition.salt = salt;
-                  if (beffe !== undefined) nutrition.beffe = beffe;
-                  if (energyKj !== undefined) nutrition.energyKj = energyKj;
-                  if (energyKcal !== undefined) nutrition.energyKcal = energyKcal;
-                  if (saturatedFat !== undefined) nutrition.saturatedFat = saturatedFat;
-                  if (carbohydrates !== undefined) nutrition.carbohydrates = carbohydrates;
-                  if (sugar !== undefined) nutrition.sugar = sugar;
-
+                  const fat = parseNum(row["Fett (%)"] ?? row["Fett"]); if (fat !== undefined) nutrition.fat = fat;
+                  const protein = parseNum(row["Protein (%)"] ?? row["Protein"]); if (protein !== undefined) nutrition.protein = protein;
+                  const water = parseNum(row["Wasser (%)"] ?? row["Wasser"]); if (water !== undefined) nutrition.water = water;
+                  const salt = parseNum(row["Salz (%)"] ?? row["Salz"]); if (salt !== undefined) nutrition.salt = salt;
+                  const beffe = parseNum(row["BEFFE (%)"] ?? row["BEFFE"]); if (beffe !== undefined) nutrition.beffe = beffe;
+                  const energyKj = parseNum(row["Energie (kJ)"] ?? row["Energy (kJ)"]); if (energyKj !== undefined) nutrition.energyKj = energyKj;
+                  const energyKcal = parseNum(row["Energie (kcal)"] ?? row["Energy (kcal)"]); if (energyKcal !== undefined) nutrition.energyKcal = energyKcal;
+                  const saturatedFat = parseNum(row["Ges. Fettsäuren (%)"] ?? row["Saturated fat (%)"]); if (saturatedFat !== undefined) nutrition.saturatedFat = saturatedFat;
+                  const carbohydrates = parseNum(row["Kohlenhydrate (%)"] ?? row["Carbohydrates (%)"]); if (carbohydrates !== undefined) nutrition.carbohydrates = carbohydrates;
+                  const sugar = parseNum(row["Zucker (%)"] ?? row["Sugar (%)"]); if (sugar !== undefined) nutrition.sugar = sugar;
                   return {
                       id: toText(row["ID"] ?? row["Id"] ?? row["id"]) || crypto.randomUUID(),
                       name,
@@ -919,112 +913,93 @@ export default function ProductDashboard() {
                       allergens: parseList(row["Allergene"] ?? row["allergens"]),
                       nutrition,
                   };
-              })
-              .filter(Boolean);
-      };
+              }).filter(Boolean);
+          };
 
-      const reader = new FileReader();
-      reader.onload = async (evt) => {
-          try {
-              const zip = await JSZip.loadAsync(evt.target?.result as ArrayBuffer);
-              
-              let restoredCount = 0;
-
-              // 1. Restore Ingredients (prefer editable Excel if present)
-              const ingredientsExcelFile = zip.file("ingredients.xlsx");
-              if (ingredientsExcelFile) {
-                  const content = await ingredientsExcelFile.async("arraybuffer");
-                  const wb = XLSX.read(content, { type: "array" });
-                  const firstSheet = wb.SheetNames[0];
-                  if (firstSheet) {
-                      const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], { defval: "" });
-                      const normalized = normalizeIngredientsFromExcelRows(rows as any[]);
-                      sessionStorage.setItem("quid-ingredient-db-clean", JSON.stringify(normalized));
-                      window.dispatchEvent(new Event("storage-update"));
-                      restoredCount++;
-                  }
-              } else {
-                  const ingredientsFile = zip.file("ingredients.json");
-                  if (ingredientsFile) {
-                      const content = await ingredientsFile.async("string");
-                      sessionStorage.setItem("quid-ingredient-db-clean", content);
-                      window.dispatchEvent(new Event("storage-update"));
-                      restoredCount++;
-                  }
-              }
-
-              // 2. Restore Recipes
-              const recipesFile = zip.file("recipes.json");
-              if (recipesFile) {
-                  const content = await recipesFile.async("string");
-                  sessionStorage.setItem("quid-recipe-db-clean", content);
-                  window.dispatchEvent(new Event("recipe-storage-update"));
+          // 1. Restore Ingredients (prefer Excel if present)
+          const ingredientsExcelFile = zip.file("ingredients.xlsx");
+          if (ingredientsExcelFile) {
+              const buf = await ingredientsExcelFile.async("arraybuffer");
+              const wb = XLSX.read(buf, { type: "array" });
+              const firstSheet = wb.SheetNames[0];
+              if (firstSheet) {
+                  const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], { defval: "" });
+                  const normalized = normalizeIngredientsFromExcelRows(rows as any[]);
+                  sessionStorage.setItem("quid-ingredient-db-clean", JSON.stringify(normalized));
+                  window.dispatchEvent(new Event("storage-update"));
                   restoredCount++;
               }
-
-              // 3. Restore Projects and Re-Hydrate Attachments
-              const projectsFile = zip.file("projects.json");
-              if (projectsFile) {
-                  const content = await projectsFile.async("string");
-                  const importedProjects: Project[] = JSON.parse(content);
-                  
-                  // Re-attach images/files from the ZIP structure
-                  const hydratedProjects = await Promise.all(importedProjects.map(async (p) => {
-                      const customerName = p.customer || "Allgemein";
-                      const safeCustomerName = customerName.replace(/[^a-z0-9äöüß \-]/gi, '_');
-                      const safeProjectName = p.name.replace(/[^a-z0-9äöüß \-]/gi, '_');
-                      
-                      // Map over timeline to restore attachments
-                      const hydratedTimeline = await Promise.all(p.timeline.map(async (event) => {
-                          if (event.attachment && !event.attachmentContent) {
-                              // Content is missing in JSON, look for it in the zip
-                              const filePath = `Kunden/${safeCustomerName}/${safeProjectName}/Dateien/${event.attachment}`;
-                              let fileInZip = zip.file(filePath);
-                              if (!fileInZip && event.attachmentRef) {
-                                  fileInZip = zip.file(event.attachmentRef);
-                              }
-                              
-                              if (fileInZip) {
-                                  // Found it! Convert back to base64/dataURL for the app to use
-                                  const blob = await fileInZip.async("blob");
-                                  return new Promise<TimelineEvent>((resolve) => {
-                                      const r = new FileReader();
-                                      r.onload = (re) => {
-                                          resolve({
-                                              ...event,
-                                              attachmentContent: re.target?.result as string
-                                          });
-                                      };
-                                      r.readAsDataURL(blob);
-                                  });
-                              }
-                          }
-                          return event;
-                      }));
-                      
-                      return { ...p, timeline: hydratedTimeline };
-                  }));
-
-                  // Restore to State and Storage
-                  setProjects(hydratedProjects);
-                  saveProjects(hydratedProjects);
+          } else {
+              const ingredientsFile = zip.file("ingredients.json");
+              if (ingredientsFile) {
+                  const content = await ingredientsFile.async("string");
+                  sessionStorage.setItem("quid-ingredient-db-clean", content);
+                  window.dispatchEvent(new Event("storage-update"));
                   restoredCount++;
               }
-
-              if (restoredCount > 0) {
-                   toast({ title: "System wiederhergestellt", description: "Daten wurden erfolgreich importiert und dekomprimiert." });
-              } else {
-                  toast({ title: "Warnung", description: "Keine bekannten Daten in diesem Backup gefunden.", variant: "destructive" });
-              }
-
-          } catch (err) {
-              console.error(err);
-              toast({ title: "Fehler", description: "Backup konnte nicht gelesen werden.", variant: "destructive" });
           }
-      };
-      reader.readAsArrayBuffer(file);
+
+          // 2. Restore Recipes
+          const recipesFile = zip.file("recipes.json");
+          if (recipesFile) {
+              const content = await recipesFile.async("string");
+              sessionStorage.setItem("quid-recipe-db-clean", content);
+              window.dispatchEvent(new Event("recipe-storage-update"));
+              restoredCount++;
+          }
+
+          // 3. Restore Projects and re-hydrate attachments
+          const projectsFile = zip.file("projects.json");
+          if (projectsFile) {
+              const content = await projectsFile.async("string");
+              const importedProjects: Project[] = JSON.parse(content);
+              
+              const hydratedProjects = await Promise.all(importedProjects.map(async (p) => {
+                  const customerName = p.customer || "Allgemein";
+                  const safeCustomerName = customerName.replace(/[^a-z0-9äöüß \-]/gi, '_');
+                  const safeProjectName = p.name.replace(/[^a-z0-9äöüß \-]/gi, '_');
+                  
+                  // Re-hydrate timeline attachments from ZIP
+                  const hydratedTimeline = await Promise.all(p.timeline.map(async (event) => {
+                      if (event.attachment && !event.attachmentContent) {
+                          const filePath = `Kunden/${safeCustomerName}/${safeProjectName}/Dateien/${event.attachment}`;
+                          let fileInZip = zip.file(filePath);
+                          if (!fileInZip && event.attachmentRef) {
+                              fileInZip = zip.file(event.attachmentRef);
+                          }
+                          if (fileInZip) {
+                              const blob = await fileInZip.async("blob");
+                              return new Promise<TimelineEvent>((resolve) => {
+                                  const r = new FileReader();
+                                  r.onload = (re) => resolve({ ...event, attachmentContent: re.target?.result as string });
+                                  r.readAsDataURL(blob);
+                              });
+                          }
+                      }
+                      return event;
+                  }));
+                  
+                  return { ...p, timeline: hydratedTimeline };
+              }));
+
+              setProjects(hydratedProjects);
+              saveProjects(hydratedProjects);
+              restoredCount++;
+          }
+
+          if (restoredCount > 0) {
+              toast({ title: "System wiederhergestellt", description: "Daten wurden erfolgreich importiert." });
+          } else {
+              toast({ title: "Warnung", description: "Keine bekannten Daten in diesem Backup gefunden.", variant: "destructive" });
+          }
+
+      } catch (err) {
+          console.error(err);
+          toast({ title: "Fehler", description: "Backup konnte nicht gelesen werden.", variant: "destructive" });
+      }
+      
       // Reset input
-      e.target.value = "";
+      if (e.target) e.target.value = "";
   };
   
   const fileImportRef = useRef<HTMLInputElement>(null);
@@ -1506,8 +1481,8 @@ export default function ProductDashboard() {
       return (
           <LandingPage 
               onStart={handleStartLanding} 
-              onImportBackup={(e) => {
-                  handleImportBackup(e);
+              onImportBackup={async (e) => {
+                  await handleImportBackup(e);
                   handleStartLanding();
               }} 
           />
