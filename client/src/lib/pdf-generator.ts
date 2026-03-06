@@ -3,7 +3,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 
-// Define interfaces to match those in product-dashboard.tsx
 interface Project {
     id: string;
     name: string;
@@ -13,7 +12,7 @@ interface Project {
     createdAt: string;
     updatedAt: string;
     timeline: any[];
-    currentRecipe?: any; 
+    currentRecipe?: any;
     latestResult?: any;
     processFlow?: string;
     isNewProcess?: boolean;
@@ -31,685 +30,564 @@ interface Project {
         };
         preparation?: string;
     };
-    processSettings?: any; // Added
-    checklist?: any; // Added
-    productIdea?: string; // Added
-    productImage?: string; // Added
-    customerAgreements?: string; // Added
+    processSettings?: any;
+    checklist?: any;
+    productIdea?: string;
+    productImage?: string;
+    customerAgreements?: string;
     notes?: string;
 }
 
+// ─── Color Palette ───
+const C = {
+    primary:  [30, 64, 110] as [number, number, number],   // Dark blue
+    accent:   [41, 128, 185] as [number, number, number],   // Medium blue
+    light:    [235, 243, 250] as [number, number, number],  // Very light blue
+    success:  [39, 174, 96] as [number, number, number],    // Green
+    warning:  [243, 156, 18] as [number, number, number],   // Amber
+    danger:   [231, 76, 60] as [number, number, number],    // Red
+    gray:     [120, 120, 120] as [number, number, number],
+    grayLight:[240, 240, 240] as [number, number, number],
+    white:    [255, 255, 255] as [number, number, number],
+    black:    [33, 33, 33] as [number, number, number],
+};
+
 export const generateProjectPDF = (project: Project) => {
     const doc = new jsPDF();
-    const primaryColor = [41, 128, 185]; // Blue
-    const secondaryColor = [100, 100, 100]; // Grey
-    
-    // Helper for Page Numbers
-    const totalPagesExp = "{total_pages_count_string}";
-    
-    // Helper to add header to each page
-    const addHeader = (pageTitle: string) => {
-        const pageWidth = doc.internal.pageSize.getWidth();
-        
-        // Stripe
-        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-        doc.rect(0, 0, pageWidth, 20, 'F');
-        
-        // Title
-        doc.setFontSize(16);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont("helvetica", "bold");
-        doc.text(pageTitle, 14, 13);
-        
-        // Project Info Small - Truncated
-        const maxHeaderTitleLen = 40;
-        let headerTitle = project.name;
-        if (headerTitle.length > maxHeaderTitleLen) {
-            headerTitle = headerTitle.substring(0, maxHeaderTitleLen) + "...";
-        }
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const contentW = pageW - 2 * margin;
 
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.text(`${headerTitle} | ${format(new Date(), "dd.MM.yyyy")}`, pageWidth - 14, 13, { align: "right" });
-        
-        // Reset Text Color
-        doc.setTextColor(0, 0, 0);
-        return 30; // Start Y for content
+    // ─── Helper: Remaining space on page ───
+    const remainingSpace = (y: number) => pageH - y - 20; // 20 = footer reserve
+
+    // ─── Helper: Ensure enough space, add page if not ───
+    const ensureSpace = (y: number, needed: number, title?: string): number => {
+        if (remainingSpace(y) < needed) {
+            doc.addPage();
+            return addHeader(title || "");
+        }
+        return y;
     };
 
-    // --- PAGE 1: STAMMDATEN & BESCHREIBUNG ---
-    let yPos = addHeader("Projekt-Report");
-    
-    // Project Title & Basic Info Block
-    doc.setFontSize(18);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    
-    // Wrap Title if too long
+    // ─── Page Header ───
+    const addHeader = (pageTitle: string): number => {
+        // Thin colored bar
+        doc.setFillColor(C.primary[0], C.primary[1], C.primary[2]);
+        doc.rect(0, 0, pageW, 14, 'F');
+
+        // Title in bar
+        doc.setFontSize(10);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.text(pageTitle, margin, 9.5);
+
+        // Right: project name + date
+        const maxLen = 45;
+        let shortName = project.name.length > maxLen ? project.name.substring(0, maxLen) + "…" : project.name;
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "normal");
+        doc.text(`${shortName}  |  ${format(new Date(), "dd.MM.yyyy")}`, pageW - margin, 9.5, { align: "right" });
+
+        doc.setTextColor(C.black[0], C.black[1], C.black[2]);
+        return 22; // content start Y
+    };
+
+    // ─── Section title ───
+    const sectionTitle = (y: number, text: string, color?: [number, number, number]): number => {
+        const c = color || C.primary;
+        doc.setFillColor(c[0], c[1], c[2]);
+        doc.rect(margin, y, 3, 6, 'F'); // accent bar
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(c[0], c[1], c[2]);
+        doc.text(text, margin + 6, y + 5);
+        doc.setTextColor(C.black[0], C.black[1], C.black[2]);
+        doc.setFont("helvetica", "normal");
+        return y + 10;
+    };
+
+    // ═══════════════════════════════════════════════
+    // PAGE 1: STAMMDATEN
+    // ═══════════════════════════════════════════════
+    let yPos = addHeader("Projektzusammenfassung");
+
+    // Title
+    doc.setFontSize(16);
+    doc.setTextColor(C.primary[0], C.primary[1], C.primary[2]);
+    doc.setFont("helvetica", "bold");
     const splitTitle = doc.splitTextToSize(project.name, 120);
-    doc.text(splitTitle, 14, yPos + 5);
-    
-    yPos += (splitTitle.length * 8) + 10;
-    
-    // Image Box Logic
-    const boxX = 146; // Right aligned
-    const boxY = 35;  // Fixed Y position for image
-    const boxW = 50;
-    const boxH = 50;
-    
-    // Attempt to find image from Timeline if not explicit
+    doc.text(splitTitle, margin, yPos + 4);
+    yPos += splitTitle.length * 7 + 6;
+    doc.setTextColor(C.black[0], C.black[1], C.black[2]);
+
+    // Image (right side)
+    const imgX = 148, imgY = 24, imgW = 46, imgH = 46;
     let displayImage = project.productImage;
     if (!displayImage && project.timeline) {
-        const imageEvents = project.timeline.filter((e: any) => 
-            e.type === 'file' && 
-            e.attachmentContent && 
-            (
-                (e.attachmentType && e.attachmentType.startsWith('image/')) || 
-                (e.attachment && /\.(jpg|jpeg|png|webp)$/i.test(e.attachment))
-            )
+        const imgs = project.timeline.filter((e: any) =>
+            e.type === 'file' && e.attachmentContent &&
+            ((e.attachmentType && e.attachmentType.startsWith('image/')) ||
+             (e.attachment && /\.(jpg|jpeg|png|webp)$/i.test(e.attachment)))
         );
-        
-        if (imageEvents.length > 0) {
-             // Get latest by ID
-             const latest = imageEvents.sort((a: any, b: any) => b.id - a.id)[0];
-             displayImage = latest.attachmentContent;
-        }
+        if (imgs.length > 0) displayImage = imgs.sort((a: any, b: any) => b.id - a.id)[0].attachmentContent;
     }
-    
-    // Draw Image Frame
+
     doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.1);
-    
+    doc.setLineWidth(0.3);
     if (displayImage) {
         try {
-            const imgData = displayImage;
-            let format = 'JPEG';
-            if (imgData.startsWith('data:image/png')) {
-                format = 'PNG';
-            } else if (imgData.startsWith('data:image/webp')) {
-                format = 'WEBP';
-            }
-
-            const imgProps = doc.getImageProperties(imgData);
-            
-            // Fit image in box
-            let w = imgProps.width;
-            let h = imgProps.height;
-            const ratio = w / h;
-            
-            let finalW = boxW;
-            let finalH = finalW / ratio;
-            
-            if (finalH > boxH) {
-                finalH = boxH;
-                finalW = finalH * ratio;
-            }
-            
-            // Center in box
-            const x = boxX + (boxW - finalW) / 2;
-            const y = boxY + (boxH - finalH) / 2;
-            
-            doc.addImage(imgData, format, x, y, finalW, finalH);
-            doc.rect(boxX, boxY, boxW, boxH);
-            
-        } catch(e) {
-            console.error("PDF Image Error", e);
-            // Fallback if image fails
-            doc.rect(boxX, boxY, boxW, boxH);
-            doc.setFontSize(8);
-            doc.setTextColor(150, 150, 150);
-            doc.text("Fehler beim Laden", boxX + boxW/2, boxY + boxH/2, { align: 'center', baseline: 'middle' });
+            let fmt = 'JPEG';
+            if (displayImage.startsWith('data:image/png')) fmt = 'PNG';
+            const props = doc.getImageProperties(displayImage);
+            const ratio = props.width / props.height;
+            let w = imgW, h = w / ratio;
+            if (h > imgH) { h = imgH; w = h * ratio; }
+            doc.addImage(displayImage, fmt, imgX + (imgW - w) / 2, imgY + (imgH - h) / 2, w, h);
+            doc.rect(imgX, imgY, imgW, imgH);
+        } catch {
+            doc.rect(imgX, imgY, imgW, imgH);
+            doc.setFontSize(7); doc.setTextColor(150, 150, 150);
+            doc.text("Bild-Fehler", imgX + imgW / 2, imgY + imgH / 2, { align: 'center', baseline: 'middle' });
+            doc.setTextColor(C.black[0], C.black[1], C.black[2]);
         }
     } else {
-        doc.rect(boxX, boxY, boxW, boxH);
-        doc.setFontSize(8);
-        doc.setTextColor(150, 150, 150);
-        doc.text("Kein Bild", boxX + boxW/2, boxY + boxH/2, { align: 'center', baseline: 'middle' });
+        doc.rect(imgX, imgY, imgW, imgH);
+        doc.setFontSize(7); doc.setTextColor(180, 180, 180);
+        doc.text("Kein Bild", imgX + imgW / 2, imgY + imgH / 2, { align: 'center', baseline: 'middle' });
+        doc.setTextColor(C.black[0], C.black[1], C.black[2]);
     }
-    
-    // Metadata Table (Left Side)
-    const metaData = [
-        ['Artikelnummer', project.articleNumber || "-"],
-        ['Kunde', project.customer || "Allgemein"],
-        ['Status', project.status],
-        ['Erstellt am', format(new Date(project.createdAt), "dd.MM.yyyy")],
-        ['Bearbeitet am', format(new Date(project.updatedAt), "dd.MM.yyyy")],
-        ['Version', project.timeline ? (project.timeline.length + 1).toString() : "1"]
-    ];
 
+    // Metadata table (left of image)
+    const statusLabel = project.status === 'development' ? 'In Entwicklung' : project.status === 'production' ? 'In Produktion' : project.status;
     autoTable(doc, {
         startY: yPos,
-        body: metaData,
+        body: [
+            ['Artikelnummer', project.articleNumber || "–"],
+            ['Kunde', project.customer || "Allgemein"],
+            ['Status', statusLabel],
+            ['Erstellt', format(new Date(project.createdAt), "dd.MM.yyyy")],
+            ['Letzte Änderung', format(new Date(project.updatedAt), "dd.MM.yyyy")],
+        ],
         theme: 'plain',
-        styles: { fontSize: 10, cellPadding: 2 },
-        columnStyles: {
-            0: { fontStyle: 'bold', width: 35 },
-            1: { width: 85 }
-        },
-        margin: { right: 70 } // Avoid image area
+        styles: { fontSize: 9, cellPadding: 1.5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 32, textColor: C.gray }, 1: { cellWidth: 85 } },
+        margin: { left: margin, right: 65 },
     });
-    
     // @ts-ignore
-    let tableEnd = doc.lastAutoTable.finalY;
-    yPos = Math.max(tableEnd, boxY + boxH) + 10;
-    
-    // Idea & Agreements
+    yPos = Math.max(doc.lastAutoTable.finalY, imgY + imgH) + 8;
+
+    // Produktbeschreibung + Kundenabsprachen
     if (project.productIdea || project.customerAgreements) {
-        doc.setFontSize(14);
-        doc.setTextColor(0, 0, 0);
-        doc.text("Produktbeschreibung", 14, yPos);
-        yPos += 6;
-        
-        doc.setDrawColor(200, 200, 200);
-        doc.line(14, yPos, 196, yPos);
-        yPos += 5;
-
+        yPos = sectionTitle(yPos, "Produktbeschreibung");
+        doc.setFontSize(9);
         if (project.productIdea) {
-            doc.setFontSize(11);
-            doc.setFont("helvetica", "bold");
-            doc.text("Produktidee:", 14, yPos);
-            doc.setFont("helvetica", "normal");
-            yPos += 5;
-            
-            doc.setFontSize(10);
-            const splitIdea = doc.splitTextToSize(project.productIdea, 180);
-            doc.text(splitIdea, 14, yPos);
-            yPos += (splitIdea.length * 5) + 5;
+            const lines = doc.splitTextToSize(project.productIdea, contentW);
+            doc.text(lines, margin, yPos);
+            yPos += lines.length * 4 + 3;
         }
-
         if (project.customerAgreements) {
-            doc.setFontSize(11);
             doc.setFont("helvetica", "bold");
-            doc.text("Kundenabsprachen:", 14, yPos);
+            doc.text("Kundenabsprachen:", margin, yPos);
             doc.setFont("helvetica", "normal");
-            yPos += 5;
-            
-            doc.setFontSize(10);
-            const splitAgreements = doc.splitTextToSize(project.customerAgreements, 180);
-            doc.text(splitAgreements, 14, yPos);
-            yPos += (splitAgreements.length * 5) + 5;
+            yPos += 4;
+            const lines = doc.splitTextToSize(project.customerAgreements, contentW);
+            doc.text(lines, margin, yPos);
+            yPos += lines.length * 4 + 3;
         }
-        yPos += 5;
+        yPos += 4;
     }
 
-    // Sensory (Page 2)
+    // Sensorik (same page if space allows)
     if (project.sensory) {
-        doc.addPage();
-        yPos = addHeader("Sensorik & Eigenschaften");
-        yPos += 5;
-
-        const sensoryData = [];
-        if(project.sensory.appearance) sensoryData.push(["Aussehen", project.sensory.appearance]);
-        if(project.sensory.odor) sensoryData.push(["Geruch", project.sensory.odor]);
-        if(project.sensory.taste) sensoryData.push(["Geschmack", project.sensory.taste]);
-        if(project.sensory.texture) sensoryData.push(["Textur", project.sensory.texture]);
-        
-        // Dimensions
-        if(project.sensory.dimensions) {
-             const dims = [];
-             if(project.sensory.dimensions.length) dims.push(`Länge/Breite: ${project.sensory.dimensions.length}`);
-             if(project.sensory.dimensions.diameter) dims.push(`Kaliber: ${project.sensory.dimensions.diameter}`);
-             if(project.sensory.dimensions.weight) dims.push(`Gewicht: ${project.sensory.dimensions.weight}`);
-             if(dims.length > 0) sensoryData.push(["Abmessungen", dims.join(", ")]);
+        const sensoryRows: any[] = [];
+        if (project.sensory.appearance) sensoryRows.push(["Aussehen", project.sensory.appearance]);
+        if (project.sensory.odor) sensoryRows.push(["Geruch", project.sensory.odor]);
+        if (project.sensory.taste) sensoryRows.push(["Geschmack", project.sensory.taste]);
+        if (project.sensory.texture) sensoryRows.push(["Konsistenz", project.sensory.texture]);
+        if (project.sensory.dimensions) {
+            const d = project.sensory.dimensions;
+            const parts = [];
+            if (d.length) parts.push(`Länge: ${d.length}`);
+            if (d.diameter) parts.push(`Kaliber: ${d.diameter}`);
+            if (d.weight) parts.push(`Gewicht: ${d.weight}`);
+            if (parts.length) sensoryRows.push(["Abmessungen", parts.join("  |  ")]);
         }
+        if (project.sensory.preparation) sensoryRows.push(["Zubereitung", project.sensory.preparation]);
 
-        if (sensoryData.length > 0) {
+        if (sensoryRows.length > 0) {
+            const needed = sensoryRows.length * 10 + 20;
+            yPos = ensureSpace(yPos, needed, "Sensorik & Eigenschaften");
+            yPos = sectionTitle(yPos, "Sensorik & Eigenschaften", C.warning);
+
             autoTable(doc, {
                 startY: yPos,
-                head: [['Parameter', 'Beschreibung']],
-                body: sensoryData,
+                body: sensoryRows,
                 theme: 'grid',
-                headStyles: { fillColor: [255, 193, 7], textColor: 0 }, // Amber
-                styles: { fontSize: 10, cellPadding: 3 },
-                columnStyles: { 0: { width: 40, fontStyle: 'bold' } }
+                styles: { fontSize: 8, cellPadding: 2.5, lineColor: [220, 220, 220], lineWidth: 0.2 },
+                columnStyles: { 0: { cellWidth: 28, fontStyle: 'bold', textColor: C.gray } },
+                rowPageBreak: 'avoid',
             });
             // @ts-ignore
-            yPos = doc.lastAutoTable.finalY + 10;
-        }
-        
-        if (project.sensory.preparation) {
-            // Check space
-            if (yPos > 250) {
-                 doc.addPage();
-                 yPos = addHeader("Zubereitung");
-            }
-
-            doc.setFontSize(11);
-            doc.setFont("helvetica", "bold");
-            doc.text("Zubereitungsempfehlung:", 14, yPos);
-            doc.setFont("helvetica", "normal");
-            yPos += 5;
-            
-            doc.setFontSize(10);
-            const splitPrep = doc.splitTextToSize(project.sensory.preparation, 180);
-            doc.text(splitPrep, 14, yPos);
+            yPos = doc.lastAutoTable.finalY + 6;
         }
     }
 
-    // --- PAGE 3: REZEPTUR ---
-    if (project.currentRecipe && project.currentRecipe.ingredients && project.currentRecipe.ingredients.length > 0) {
-        doc.addPage();
-        yPos = addHeader("Aktuelle Rezeptur");
+    // Checkliste (compact, same page if possible)
+    if (project.checklist) {
+        yPos = ensureSpace(yPos, 60, "Projektzusammenfassung");
+        yPos = sectionTitle(yPos, "Projekt-Checkliste");
+        const items = [
+            ['Artikelanlage', project.checklist.articleCreated],
+            ['Rezeptur', project.checklist.recipeCreated],
+            ['Etikett', project.checklist.labelCreated],
+            ['Nährwerte', project.checklist.nutritionCreated],
+            ['Spezifikation', project.checklist.specCreated],
+            ['Prozessparameter', project.checklist.processCreated],
+            ['Navision', project.checklist.navisionCreated],
+        ];
+        const checkRows = items.map(([name, done]) => [name, done ? '✓' : '–']);
+        autoTable(doc, {
+            startY: yPos,
+            body: checkRows,
+            theme: 'plain',
+            styles: { fontSize: 8, cellPadding: 1.5 },
+            columnStyles: {
+                0: { cellWidth: 35, textColor: C.gray },
+                1: { cellWidth: 10, halign: 'center', fontStyle: 'bold' }
+            },
+            didParseCell: (data: any) => {
+                if (data.column.index === 1 && data.section === 'body') {
+                    data.cell.styles.textColor = data.cell.raw === '✓' ? C.success : [180, 180, 180];
+                }
+            },
+            margin: { left: margin },
+            tableWidth: 50,
+            rowPageBreak: 'avoid',
+        });
+        // @ts-ignore
+        yPos = doc.lastAutoTable.finalY + 6;
+    }
 
-        const tableData = project.currentRecipe.ingredients.map((ing: any) => [
+    // ═══════════════════════════════════════════════
+    // REZEPTUR
+    // ═══════════════════════════════════════════════
+    if (project.currentRecipe?.ingredients?.length > 0) {
+        doc.addPage();
+        yPos = addHeader("Rezeptur");
+
+        const rows = project.currentRecipe.ingredients.map((ing: any) => [
             ing.name,
-            ing.articleNumber || "-",
+            ing.articleNumber || "–",
             `${ing.rawWeight.toFixed(3)} kg`
         ]);
 
         autoTable(doc, {
             startY: yPos,
             head: [['Zutat', 'Art.Nr.', 'Menge']],
-            body: tableData,
+            body: rows,
             theme: 'striped',
-            headStyles: { fillColor: primaryColor },
-            styles: { fontSize: 10, cellPadding: 3 },
-            columnStyles: { 
-                0: { width: 100 },
-                2: { halign: 'right' }
-            }
+            headStyles: { fillColor: C.primary, fontSize: 8 },
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: { 0: { cellWidth: 95 }, 2: { halign: 'right', cellWidth: 25 } },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            rowPageBreak: 'avoid',
         });
-
         // @ts-ignore
-        yPos = doc.lastAutoTable.finalY + 10;
-        
-        // Sums
+        yPos = doc.lastAutoTable.finalY + 6;
+
         if (project.latestResult) {
-            doc.setFontSize(10);
-            doc.setFont("helvetica", "bold");
-            doc.text(`Gesamt-Rohmasse: ${project.latestResult.totalRawMass.toFixed(3)} kg`, 14, yPos);
-            doc.text(`Endgewicht: ${project.latestResult.totalEndWeight.toFixed(3)} kg`, 14, yPos + 5);
-            
+            doc.setFontSize(8); doc.setFont("helvetica", "bold");
+            doc.text(`Rohmasse: ${project.latestResult.totalRawMass.toFixed(3)} kg    Endgewicht: ${project.latestResult.totalEndWeight.toFixed(3)} kg`, margin, yPos);
             if (project.currentRecipe.cookingLoss > 0) {
-                 // Highlight Cooking Loss
-                 doc.setTextColor(255, 0, 0); // Red highlight for importance
-                 doc.text(`Garverlust: ${project.currentRecipe.cookingLoss}%`, 100, yPos);
-                 doc.setTextColor(0, 0, 0); // Reset
+                doc.setTextColor(C.danger[0], C.danger[1], C.danger[2]);
+                doc.text(`Garverlust: ${project.currentRecipe.cookingLoss}%`, margin + 110, yPos);
+                doc.setTextColor(C.black[0], C.black[1], C.black[2]);
             }
+            doc.setFont("helvetica", "normal");
+            yPos += 8;
         }
     }
 
-    // --- PAGE 4: QUID & DEKLARATION ---
+    // ═══════════════════════════════════════════════
+    // DEKLARATION & NÄHRWERTE (auf einer Seite halten!)
+    // ═══════════════════════════════════════════════
     if (project.latestResult) {
-        doc.addPage();
-        yPos = addHeader("Deklaration & Nährwerte");
+        // Estimate total height needed: label text + nutrition table
+        const labelLines = project.latestResult.labelText ? doc.splitTextToSize(project.latestResult.labelText, 170).length : 0;
+        const estimatedHeight = (labelLines * 4) + 90; // label box + nutrition table
 
-        // Deklaration
+        // Check if it fits on current page, otherwise new page
+        if (remainingSpace(yPos) < estimatedHeight) {
+            doc.addPage();
+            yPos = addHeader("Deklaration & Nährwerte");
+        } else {
+            yPos = sectionTitle(yPos, "Deklaration & Nährwerte");
+        }
+
+        // Label text
         if (project.latestResult.labelText) {
-            doc.setFontSize(12);
-            doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-            doc.text("Zutatenliste (Entwurf)", 14, yPos);
-            yPos += 7;
-            
-            doc.setFontSize(10);
-            doc.setTextColor(0, 0, 0);
-            doc.setFont("helvetica", "italic");
-            
-            // Draw a box around label text
-            const splitText = doc.splitTextToSize(project.latestResult.labelText, 170);
-            const boxHeight = (splitText.length * 5) + 10;
-            
-            doc.setDrawColor(200, 200, 200);
-            doc.setFillColor(250, 250, 250);
-            doc.rect(14, yPos, 180, boxHeight, 'FD');
-            
-            doc.text(splitText, 19, yPos + 7);
-            yPos += boxHeight + 15;
+            doc.setFontSize(8); doc.setFont("helvetica", "italic");
+            const splitText = doc.splitTextToSize(project.latestResult.labelText, 168);
+            const boxH = splitText.length * 3.8 + 8;
+
+            doc.setFillColor(250, 250, 248);
+            doc.setDrawColor(210, 210, 210);
+            doc.rect(margin, yPos, contentW, boxH, 'FD');
+            doc.text(splitText, margin + 4, yPos + 5);
+            yPos += boxH + 6;
             doc.setFont("helvetica", "normal");
         }
 
-        // Nutrition Table
+        // Nährwerte - MUST NOT split across pages
         if (project.latestResult.nutritionPer100g) {
-            doc.setFontSize(12);
-            doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-            doc.text("Nährwerte (pro 100g)", 14, yPos);
-            yPos += 5;
-            
             const nutri = project.latestResult.nutritionPer100g;
-            const nutriData = [
-                ['Energie', `${Math.round(nutri.energyKj)} kJ / ${Math.round(nutri.energyKcal)} kcal`],
-                ['Fett', `${nutri.fat.toFixed(1)} g`],
-                ['  davon gesättigte Fettsäuren', `${nutri.saturatedFat.toFixed(1)} g`],
-                ['Kohlenhydrate', `${nutri.carbohydrates.toFixed(1)} g`],
-                ['  davon Zucker', `${nutri.sugar.toFixed(1)} g`],
-                ['Eiweiß', `${nutri.protein.toFixed(1)} g`],
-                ['Salz', `${nutri.salt.toFixed(2)} g`],
-                // Tech Data Section
-                [{ content: 'Technische Werte', colSpan: 2, styles: { fillColor: [240, 240, 240], fontStyle: 'italic' } }],
-                ['Wasser (kalkulatorisch)', `${(nutri.water || 0).toFixed(1)} g`],
-                ['Fleischanteil (QUID)', `${(project.latestResult.meatPercentage || 0).toFixed(1)} %`]
-            ];
+
+            // Ensure the ENTIRE table fits
+            yPos = ensureSpace(yPos, 85, "Nährwerte");
+            if (yPos < 25) yPos = sectionTitle(yPos, "Nährwerte pro 100 g");
+            else { yPos = sectionTitle(yPos, "Nährwerte pro 100 g"); }
 
             autoTable(doc, {
                 startY: yPos,
                 head: [['Parameter', 'Wert']],
-                body: nutriData,
+                body: [
+                    ['Energie', `${Math.round(nutri.energyKj)} kJ / ${Math.round(nutri.energyKcal)} kcal`],
+                    ['Fett', `${nutri.fat.toFixed(1)} g`],
+                    ['  davon ges. Fettsäuren', `${nutri.saturatedFat.toFixed(1)} g`],
+                    ['Kohlenhydrate', `${nutri.carbohydrates.toFixed(1)} g`],
+                    ['  davon Zucker', `${nutri.sugar.toFixed(1)} g`],
+                    ['Eiweiß', `${nutri.protein.toFixed(1)} g`],
+                    ['Salz', `${nutri.salt.toFixed(2)} g`],
+                    [{ content: 'Technische Werte', colSpan: 2, styles: { fillColor: C.grayLight, fontStyle: 'italic', fontSize: 7 } }],
+                    ['Wasser (kalk.)', `${(nutri.water || 0).toFixed(1)} g`],
+                    ['Fleischanteil', `${(project.latestResult.meatPercentage || 0).toFixed(1)} %`],
+                ],
                 theme: 'grid',
-                headStyles: { fillColor: [50, 50, 50] },
-                styles: { fontSize: 10, cellPadding: 3 },
-                columnStyles: { 0: { width: 100 } },
-                alternateRowStyles: { fillColor: [255, 255, 255] }
+                headStyles: { fillColor: C.primary, fontSize: 8 },
+                styles: { fontSize: 8, cellPadding: 2, lineColor: [220, 220, 220], lineWidth: 0.2 },
+                columnStyles: { 0: { cellWidth: 55 }, 1: { halign: 'right', cellWidth: 35 } },
+                tableWidth: 95,
+                rowPageBreak: 'avoid',
+                // Force: do NOT break this table across pages
+                pageBreak: 'avoid' as any,
             });
+            // @ts-ignore
+            yPos = doc.lastAutoTable.finalY + 6;
         }
     }
 
-    // --- PAGE 5: PROZESS-PARAMETER ---
+    // ═══════════════════════════════════════════════
+    // PROZESS-PARAMETER
+    // ═══════════════════════════════════════════════
     if (project.processSettings) {
         doc.addPage();
         yPos = addHeader("Prozess-Parameter");
 
-        doc.setFontSize(12);
-        doc.text(`Version: ${project.processSettings.version || "1.0"}`, 14, yPos);
-        yPos += 10;
-        
-        // Flow Diagram Info
-         if (project.processFlow) {
-             // Map ID to Label
-             const FLOW_DIAGRAMS = [
-                { id: "FD_001", label: "FD_001 Fließdiagramm Gewürze und Hilfsstoffe" },
-                { id: "FD_002", label: "FD_002 Fließdiagramm Auftauen gefrorenes Fleisch" },
-                { id: "FD_003", label: "FD_003 Fließdiagramm Fleischteilstücke" },
-                { id: "FD_004", label: "FD_004 Fließdiagramm rohe Fleischprodukte" },
-                { id: "FD_005", label: "FD_005 Fließdiagramm gegarte Fleischprodukte" },
-                { id: "FD_006", label: "FD_006 Fließdiagramm Roh- und Kochpökelwaren" },
-                { id: "FD_007", label: "FD_007 Fließdiagramm Brüh- und Kochwurst (Kaliberware)" },
-                { id: "FD_008", label: "FD_008 Fließdiagramm geschnittene Wurst- und Bratenartikel" },
-                { id: "FD_009", label: "FD_009 Fließdiagramm Bratstraßenartikel natur/grundgewürzt" },
-                { id: "FD_010", label: "FD_010 Fließdiagramm Piccata" },
-                { id: "FD_011", label: "FD_011 Fließdiagramm Bratstraßenartikel paniert" },
-                { id: "FD_012", label: "FD_012 Fließdiagramm Bratstraßenartikel mariniert" },
-                { id: "FD_013", label: "FD_013 Fließdiagramm Bratstraßenartikel gefüllt" },
-                { id: "FD_014", label: "FD_014 Fließdiagramm Bratstraßenartikel gefüllt, paniert" },
-                { id: "FD_015", label: "FD_015 Fließdiagramm Bratstraßenartikel belegt" },
-                { id: "FD_016", label: "FD_016 Fließdiagramm Kochwurst Kaliberware" },
-                { id: "FD_017", label: "FD_017 Fließdiagramm Handelsware" },
-                { id: "FD_018", label: "FD_018 Fließdiagramm Suppen und Saucen" },
-                { id: "FD_019", label: "FD_019 Fließdiagramm Zollware Bratstraßenartikel" },
-                { id: "FD_020", label: "FD_020 Fließdiagramm Bratstraßenartikel gebraten Kruste" },
-                { id: "FD_021", label: "FD_021 Fließdiagramm Gefüllte Paprika" },
-                { id: "FD_022", label: "FD_022 Fließdiagramm Brühwürstchen" },
-                { id: "FD_023", label: "FD_023 Fließdiagramm Krautwickel TK" },
-                { id: "FD_024", label: "FD_024 Fließdiagramm Sous vide gegarte Fleischware" },
-                { id: "FD_025", label: "FD_025 Fließdiagramm Vegetarische Artikel paniert roh, TK" },
-                { id: "FD_026", label: "FD_026 Fließdiagramm Vegetarisch Taler/ Bällchen roh, TK" },
-                { id: "FD_027", label: "FD_027 Fließdiagramm Vegetarisch Taler/ Bällchen paniert, roh, TK" },
-                { id: "FD_028", label: "FD_028 Fließdiagramm Sülze, Kaliberware" },
-                { id: "FD_029", label: "FD_029 Fließdiagramm gekochte Fleischartikel geschnitten TK" },
-                { id: "FD_030", label: "FD_030 Fließdiagramm Vegetarische Artikel mit Topping, roh, TK" },
-                { id: "FD_031", label: "FD_031 Fließdiagramm Vegetarische Artikel mariniert, roh, TK" },
-                { id: "FD_032", label: "FD_032 Fließdiagramm Kommissionierung" },
-                { id: "FD_033", label: "FD_033 Fließdiagramm Fleischkäse" },
-                { id: "FD_034", label: "FD_034 Fließdiagramm Zukaufware Spieße gebraten" },
-                { id: "FD_035", label: "FD_035 Fließdiagramm Vegetarisches Produkt in Form gegart, TK" },
-                { id: "FD_036", label: "FD_036 Fließdiagramm Brühwurst geschnitten, gebraten, TK" },
-                { id: "FD_037", label: "FD_037 Fließdiagramm Rohe Wurst TK" },
-                { id: "FD_038", label: "FD_038 Fließdiagramm Brühwurst in geschnittene Kaliberware gewickelt" },
-                { id: "FD_039", label: "FD_039 Fließdiagramm Teilstücke gebräunt, sous vide gegart" },
-                { id: "FD_040", label: "FD_040 Fließdiagramm Gefüllte Paprika gegart" },
-                { id: "FD_042", label: "FD_042 Fließdiagramm Rohpökelwaren (mit Ummantelung) Stückware" },
-                { id: "FD_043", label: "FD_043 Fließdiagramm Vegetarische Bällchen-Taler, gebraten-gegart" },
-                { id: "FD_044", label: "FD_044 Fließdiagramm Rohwurst kaltgeräuchert frisch/TK" },
-                { id: "FD_045", label: "FD_045 Wareneingang und Kühllagerung" },
-                { id: "FD_046", label: "FD_046 Fließdiagramm Bratstraßenartikel gewolft" },
-                { id: "FD_047", label: "FD_047 Teilstücke gebräunt, sous vide gegart, gesiebt" },
-                { id: "FD_048", label: "FD_048 Vegetarisches Produkt geschnitten" },
-                { id: "FD_049", label: "FD_049 Nachpasteurisierung verzehrfertiger Produkte" }
-             ];
-             
-             // Check if custom flows are stored in localStorage - tricky in PDF generator which might run in different context?
-             // But this runs on client, so localStorage is available.
-             let allFlows = [...FLOW_DIAGRAMS];
-             try {
-                 const customFlows = getData("quid-custom-flows");
-                 if (customFlows) {
-                     if (customFlows) allFlows = [...allFlows, ...customFlows];
-                 }
-             } catch(e) { console.error(e); }
+        // Version + Flow Diagram in one line
+        doc.setFontSize(8);
+        doc.text(`Version: ${project.processSettings.version || "1.0"}`, margin, yPos);
 
-             const flowObj = allFlows.find(f => f.id === project.processFlow);
-             const flowLabel = flowObj ? flowObj.label : project.processFlow;
-
-             doc.setFontSize(10);
-             doc.text(`Standard-Fließdiagramm: ${flowLabel}`, 14, yPos);
-             yPos += 8;
+        if (project.processFlow) {
+            const FLOW_DIAGRAMS = [
+                { id: "FD_001", label: "FD_001 Gewürze/Hilfsstoffe" }, { id: "FD_002", label: "FD_002 Auftauen" },
+                { id: "FD_003", label: "FD_003 Fleischteilstücke" }, { id: "FD_004", label: "FD_004 Rohe Fleischprodukte" },
+                { id: "FD_005", label: "FD_005 Gegarte Fleischprodukte" }, { id: "FD_006", label: "FD_006 Roh-/Kochpökelwaren" },
+                { id: "FD_007", label: "FD_007 Brüh-/Kochwurst" }, { id: "FD_008", label: "FD_008 Geschnittene Wurst" },
+                { id: "FD_009", label: "FD_009 Bratstraße natur" }, { id: "FD_010", label: "FD_010 Piccata" },
+                { id: "FD_011", label: "FD_011 Bratstraße paniert" }, { id: "FD_012", label: "FD_012 Bratstraße mariniert" },
+                { id: "FD_013", label: "FD_013 Bratstraße gefüllt" }, { id: "FD_014", label: "FD_014 Bratstraße gefüllt pan." },
+                { id: "FD_015", label: "FD_015 Bratstraße belegt" }, { id: "FD_016", label: "FD_016 Kochwurst Kaliber" },
+                { id: "FD_017", label: "FD_017 Handelsware" }, { id: "FD_018", label: "FD_018 Suppen/Saucen" },
+                { id: "FD_019", label: "FD_019 Zollware" }, { id: "FD_020", label: "FD_020 Bratstraße Kruste" },
+                { id: "FD_021", label: "FD_021 Gefüllte Paprika" }, { id: "FD_022", label: "FD_022 Brühwürstchen" },
+                { id: "FD_023", label: "FD_023 Krautwickel TK" }, { id: "FD_024", label: "FD_024 Sous vide" },
+                { id: "FD_025", label: "FD_025 Vegetarisch paniert roh" }, { id: "FD_026", label: "FD_026 Veg. Taler/Bällchen" },
+                { id: "FD_027", label: "FD_027 Veg. Taler paniert" }, { id: "FD_028", label: "FD_028 Sülze" },
+                { id: "FD_029", label: "FD_029 Gekochte Fleischartikel" }, { id: "FD_030", label: "FD_030 Veg. Topping" },
+                { id: "FD_031", label: "FD_031 Veg. mariniert" }, { id: "FD_032", label: "FD_032 Kommissionierung" },
+                { id: "FD_033", label: "FD_033 Fleischkäse" }, { id: "FD_034", label: "FD_034 Zukaufware Spieße" },
+                { id: "FD_035", label: "FD_035 Veg. in Form gegart" }, { id: "FD_036", label: "FD_036 Brühwurst geschnitten" },
+                { id: "FD_037", label: "FD_037 Rohe Wurst TK" }, { id: "FD_038", label: "FD_038 Brühwurst gewickelt" },
+                { id: "FD_039", label: "FD_039 Sous vide gebräunt" }, { id: "FD_040", label: "FD_040 Gef. Paprika gegart" },
+                { id: "FD_042", label: "FD_042 Rohpökelwaren" }, { id: "FD_043", label: "FD_043 Veg. gebraten" },
+                { id: "FD_044", label: "FD_044 Rohwurst kaltgeräuchert" }, { id: "FD_045", label: "FD_045 Wareneingang" },
+                { id: "FD_046", label: "FD_046 Bratstraße gewolft" }, { id: "FD_047", label: "FD_047 Sous vide gesiebt" },
+                { id: "FD_048", label: "FD_048 Veg. geschnitten" }, { id: "FD_049", label: "FD_049 Nachpasteurisierung" },
+            ];
+            let allFlows = [...FLOW_DIAGRAMS];
+            try { const cf = getData("quid-custom-flows"); if (cf) allFlows = [...allFlows, ...cf]; } catch {}
+            const fd = allFlows.find(f => f.id === project.processFlow);
+            doc.text(`Fließdiagramm: ${fd?.label || project.processFlow}`, margin + 50, yPos);
         }
+        yPos += 6;
 
         if (project.processSettings.sections) {
             const processData: any[][] = [];
             project.processSettings.sections.forEach((section: any) => {
-                 // Removed strict filter to show more fields even if they seem empty, but not completely null/undefined
-                 // Show fields that have a value OR are of type that might be relevant even if empty-ish (though table needs content)
-                 // Let's filter only strictly empty or dash
-                 const validFields = section.fields.filter((f: any) => {
-                     if (f.value === undefined || f.value === null) return false;
-                     const val = String(f.value).trim();
-                     return val !== ""; // Show everything except empty string. Show "0", "-", etc.
-                 });
-
-                 if (validFields.length > 0) {
-                     processData.push([{ content: section.title, colSpan: 2, styles: { fillColor: [230, 230, 230], fontStyle: 'bold', textColor: 0 } }]);
-                     validFields.forEach((field: any) => {
-                         processData.push([field.label, field.value]);
-                     });
-                 }
+                const validFields = section.fields.filter((f: any) => f.value !== undefined && f.value !== null && String(f.value).trim() !== "");
+                if (validFields.length > 0) {
+                    processData.push([{ content: section.title, colSpan: 2, styles: { fillColor: C.light, fontStyle: 'bold', textColor: C.primary, fontSize: 7 } }]);
+                    validFields.forEach((field: any) => processData.push([field.label, field.value]));
+                }
             });
 
             if (processData.length > 0) {
                 autoTable(doc, {
                     startY: yPos,
-                    head: [['Parameter', 'Wert']],
                     body: processData,
                     theme: 'grid',
-                    headStyles: { fillColor: [100, 100, 100] },
-                    styles: { fontSize: 10, cellPadding: 3 },
-                    columnStyles: { 0: { width: 80 } }
+                    styles: { fontSize: 8, cellPadding: 2, lineColor: [220, 220, 220], lineWidth: 0.2 },
+                    columnStyles: { 0: { cellWidth: 60, textColor: C.gray } },
+                    rowPageBreak: 'avoid',
                 });
+                // @ts-ignore
+                yPos = doc.lastAutoTable.finalY + 6;
             }
-        } else {
-            // Legacy Fallback
-            const settings = project.processSettings;
-            const processData = [
-                ['Kutter-Temperatur', `${settings.cutterTemperature || "-"} °C`],
-                ['Füll-Temperatur', `${settings.fillingTemperature || "-"} °C`],
-                ['Darm-Kaliber', `${settings.casingCaliber || "-"}`],
-                ['Rauch-Programm', settings.smokingProgram || "-"],
-                ['Kerntemperatur', `${settings.coreTemperature || "-"} °C`],
-                ['Kammer', settings.chamberId || "-"]
-            ];
-            autoTable(doc, {
-                startY: yPos,
-                head: [['Parameter', 'Wert']],
-                body: processData,
-                theme: 'grid',
-                headStyles: { fillColor: [100, 100, 100] },
-            });
         }
     }
 
-    // --- PAGE 6: FMEA (If applicable) ---
-    if ((project.riskAnalysis || (project.fmeaData && project.fmeaData.hazards && project.fmeaData.hazards.length > 0)) && project.isNewProcess) {
+    // ═══════════════════════════════════════════════
+    // FMEA
+    // ═══════════════════════════════════════════════
+    if (project.isNewProcess && project.fmeaData?.hazards?.length > 0) {
         doc.addPage();
         yPos = addHeader("Risikoanalyse (FMEA)");
-        
-        if (project.fmeaData && project.fmeaData.hazards && project.fmeaData.hazards.length > 0) {
-            const hazards = project.fmeaData.hazards.map((h: any) => [
-                h.hazard,
-                h.category,
-                h.severity,
-                h.occurrence,
-                h.severity * h.occurrence,
-                h.measures
-            ]);
+
+        // Gefahrenanalyse
+        const hazardRows = project.fmeaData.hazards.map((h: any) => [
+            h.hazard, h.category, h.severity, h.occurrence, h.severity * h.occurrence, h.measures
+        ]);
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Gefährdung', 'Kat.', 'B', 'A', 'RPZ', 'Maßnahmen']],
+            body: hazardRows,
+            theme: 'grid',
+            headStyles: { fillColor: C.warning, textColor: C.black, fontSize: 7 },
+            styles: { fontSize: 7, cellPadding: 2, lineColor: [220, 220, 220], lineWidth: 0.2 },
+            columnStyles: { 0: { cellWidth: 45 }, 5: { cellWidth: 50 } },
+            rowPageBreak: 'avoid',
+        });
+        // @ts-ignore
+        yPos = doc.lastAutoTable.finalY + 8;
+
+        // CCP Tabelle
+        if (project.fmeaData.ccps?.length > 0) {
+            yPos = ensureSpace(yPos, 30, "FMEA – Entscheidungsbaum");
+            yPos = sectionTitle(yPos, "Entscheidungsbaum (CCP/CP)", C.danger);
 
             autoTable(doc, {
                 startY: yPos,
-                head: [['Gefährdung', 'Kat.', 'S', 'A', 'RPZ', 'Maßnahmen']],
-                body: hazards,
+                head: [['Schritt', 'Gefahr', 'Ergebnis', 'Maßnahmen']],
+                body: project.fmeaData.ccps.map((c: any) => [c.step, c.hazardType, c.result, c.controlMeasures]),
                 theme: 'grid',
-                headStyles: { fillColor: [255, 237, 213], textColor: 0 }, // Orange
-                styles: { fontSize: 8, cellPadding: 2 },
-                columnStyles: { 
-                    0: { width: 50 },
-                    5: { width: 60 }
-                }
+                headStyles: { fillColor: [254, 226, 226], textColor: C.black, fontSize: 7 },
+                styles: { fontSize: 7, cellPadding: 2, lineColor: [220, 220, 220], lineWidth: 0.2 },
+                rowPageBreak: 'avoid',
+                didParseCell: (data: any) => {
+                    if (data.column.index === 2 && data.section === 'body') {
+                        if (data.cell.raw === 'CCP') data.cell.styles.textColor = C.danger;
+                    }
+                },
             });
-            
             // @ts-ignore
-            yPos = doc.lastAutoTable.finalY + 15;
+            yPos = doc.lastAutoTable.finalY + 8;
 
-            // CCPs
-            if (project.fmeaData.ccps && project.fmeaData.ccps.length > 0) {
-                doc.setFontSize(12);
-                doc.text("Entscheidungsbaum (CCP/CP)", 14, yPos);
-                yPos += 5;
+            // Entscheidungsdetails
+            const TREE: Record<string, string> = {
+                q1: "Existieren Maßnahmen zur Beherrschung der Gefahr?",
+                modification_check: "Ist eine Beherrschung an diesem Schritt für die Sicherheit notwendig?",
+                q2: "Ist der Schritt dazu bestimmt, die Gefahr zu eliminieren/reduzieren?",
+                q3: "Könnte eine Kontamination inakzeptable Werte erreichen?",
+                q4: "Wird ein nachfolgender Schritt die Gefahr eliminieren/reduzieren?",
+            };
 
-                const ccps = project.fmeaData.ccps.map((c: any) => [
-                    c.step,
-                    c.hazardType,
-                    c.result,
-                    c.controlMeasures
-                ]);
+            const ccpsWithInfo = project.fmeaData.ccps.filter((c: any) =>
+                (c.decisionDetails?.length > 0) || c.q1 !== null || c.q2 !== null
+            );
 
-                autoTable(doc, {
-                    startY: yPos,
-                    head: [['Schritt', 'Gefahr', 'Typ', 'Lenkungsmaßnahme']],
-                    body: ccps,
-                    theme: 'grid',
-                    headStyles: { fillColor: [254, 226, 226], textColor: 0 },
-                    styles: { fontSize: 8 }
-                });
+            if (ccpsWithInfo.length > 0) {
+                yPos = ensureSpace(yPos, 30, "FMEA – Entscheidungsdetails");
+                yPos = sectionTitle(yPos, "Entscheidungsdetails & Begründungen");
 
-                // @ts-ignore
-                yPos = doc.lastAutoTable.finalY + 12;
+                ccpsWithInfo.forEach((ccp: any) => {
+                    yPos = ensureSpace(yPos, 25, "FMEA – Fortsetzung");
 
-                // DECISION_TREE questions for reconstructing details
-                const DECISION_TREE_PDF: Record<string, string> = {
-                    q1: "Existieren Maßnahmen zur Beherrschung der Gefahr?",
-                    modification_check: "Ist eine Beherrschung an diesem Schritt notwendig für die Sicherheit?",
-                    q2: "Ist der Schritt speziell dazu bestimmt, die Gefahr zu eliminieren oder auf ein akzeptables Maß zu reduzieren?",
-                    q3: "Könnte eine Kontamination mit der identifizierten Gefahr inakzeptable Werte erreichen?",
-                    q4: "Wird ein nachfolgender Schritt die Gefahr eliminieren oder auf ein akzeptables Maß reduzieren?"
-                };
+                    doc.setFontSize(8); doc.setFont("helvetica", "bold");
+                    doc.text(`${ccp.step || "?"} → ${ccp.result}`, margin, yPos);
+                    doc.setFont("helvetica", "normal"); yPos += 4;
 
-                // Entscheidungsdetails & Kommentare
-                doc.setFontSize(11);
-                doc.text("Entscheidungsdetails & Begründungen", 14, yPos);
-                yPos += 6;
-
-                project.fmeaData.ccps.forEach((ccp: any) => {
-                    if (yPos > 250) { doc.addPage(); yPos = addHeader("FMEA - Fortsetzung"); }
-
-                    doc.setFontSize(9);
-                    doc.setFont("helvetica", "bold");
-                    doc.text(`${ccp.step || "?"} → ${ccp.result}`, 14, yPos);
-                    doc.setFont("helvetica", "normal");
-                    yPos += 5;
-
-                    // Build detail rows (from saved decisionDetails or reconstructed from q1-q4)
-                    let detailRows: any[] = [];
-                    if (ccp.decisionDetails && ccp.decisionDetails.length > 0) {
-                        detailRows = ccp.decisionDetails.map((d: any) => [
-                            d.questionKey.toUpperCase(),
-                            d.questionText,
-                            d.answer ? "JA" : "NEIN",
+                    let rows: any[] = [];
+                    if (ccp.decisionDetails?.length > 0) {
+                        rows = ccp.decisionDetails.map((d: any) => [
+                            d.questionKey.toUpperCase(), d.questionText, d.answer ? "JA" : "NEIN",
                             ccp.questionComments?.[d.questionKey] || ""
                         ]);
                     } else {
-                        // Reconstruct from q1-q4
-                        for (const qKey of ["q1", "q2", "q3", "q4"]) {
-                            if (ccp[qKey] !== null && ccp[qKey] !== undefined) {
-                                detailRows.push([
-                                    qKey.toUpperCase(),
-                                    DECISION_TREE_PDF[qKey] || qKey,
-                                    ccp[qKey] ? "JA" : "NEIN",
-                                    ccp.questionComments?.[qKey] || ""
-                                ]);
+                        for (const qk of ["q1", "q2", "q3", "q4"]) {
+                            if (ccp[qk] !== null && ccp[qk] !== undefined) {
+                                rows.push([qk.toUpperCase(), TREE[qk] || qk, ccp[qk] ? "JA" : "NEIN", ccp.questionComments?.[qk] || ""]);
                             }
                         }
                     }
 
-                    if (detailRows.length > 0) {
+                    if (rows.length > 0) {
                         autoTable(doc, {
                             startY: yPos,
-                            head: [['Frage', 'Fragetext', 'Antwort', 'Begründung']],
-                            body: detailRows,
+                            head: [['#', 'Frage', 'Antw.', 'Begründung']],
+                            body: rows,
                             theme: 'grid',
-                            headStyles: { fillColor: [219, 234, 254], textColor: 0, fontSize: 7 },
-                            styles: { fontSize: 7, cellPadding: 2 },
-                            columnStyles: { 0: { cellWidth: 12 }, 1: { cellWidth: 60 }, 2: { cellWidth: 14 } }
+                            headStyles: { fillColor: C.light, textColor: C.primary, fontSize: 6 },
+                            styles: { fontSize: 6.5, cellPadding: 1.5, lineColor: [220, 220, 220], lineWidth: 0.15 },
+                            columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 55 }, 2: { cellWidth: 10, halign: 'center' } },
+                            rowPageBreak: 'avoid',
+                            didParseCell: (data: any) => {
+                                if (data.column.index === 2 && data.section === 'body') {
+                                    data.cell.styles.textColor = data.cell.raw === 'JA' ? C.success : C.danger;
+                                    data.cell.styles.fontStyle = 'bold';
+                                }
+                            },
                         });
                         // @ts-ignore
-                        yPos = doc.lastAutoTable.finalY + 8;
-                    } else {
-                        yPos += 4;
+                        yPos = doc.lastAutoTable.finalY + 5;
                     }
                 });
             }
         }
     }
 
-    // --- PAGE 7: TIMELINE & STATUS ---
+    // ═══════════════════════════════════════════════
+    // TIMELINE
+    // ═══════════════════════════════════════════════
     doc.addPage();
     yPos = addHeader("Projekt-Verlauf");
 
-    const timelineData = project.timeline.map((event: any) => [
-        event.date,
-        event.type.toUpperCase(),
-        event.title,
-        event.user
-    ]);
-
-    autoTable(doc, {
-        startY: yPos,
-        head: [['Datum', 'Typ', 'Ereignis', 'Benutzer']],
-        body: timelineData,
-        theme: 'plain',
-        headStyles: { fillColor: [220, 220, 220], textColor: 0 },
-        styles: { fontSize: 9, cellPadding: 2 }
-    });
-
-    // Checklists (bottom of page or new page)
-    // @ts-ignore
-    yPos = doc.lastAutoTable.finalY + 20;
-    
-    if (project.checklist) {
-         doc.setFontSize(12);
-         doc.text("Checkliste Status", 14, yPos);
-         yPos += 5;
-         
-         const checkData = [
-            ['Artikelanlage', project.checklist.articleCreated ? 'Ja' : 'Nein'],
-            ['Rezeptur', project.checklist.recipeCreated ? 'Ja' : 'Nein'],
-            ['Etikett / Deklaration', project.checklist.labelCreated ? 'Ja' : 'Nein'],
-            ['Nährwerte', project.checklist.nutritionCreated ? 'Ja' : 'Nein'],
-            ['Spezifikation', project.checklist.specCreated ? 'Ja' : 'Nein'],
-            ['Prozessparameter', project.checklist.processCreated ? 'Ja' : 'Nein'],
-            ['Navision', project.checklist.navisionCreated ? 'Ja' : 'Nein'],
-        ];
-        
+    if (project.timeline.length > 0) {
         autoTable(doc, {
             startY: yPos,
-            head: [['Schritt', 'Erledigt']],
-            body: checkData,
+            head: [['Datum', 'Typ', 'Ereignis', 'Benutzer']],
+            body: project.timeline.map((e: any) => [e.date, e.type.toUpperCase(), e.title, e.user]),
             theme: 'striped',
-            headStyles: { fillColor: [50, 50, 50] },
-            styles: { fontSize: 9 },
-            columnStyles: { 0: { width: 100 } }
+            headStyles: { fillColor: C.primary, fontSize: 7 },
+            styles: { fontSize: 7, cellPadding: 1.5 },
+            columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 18 }, 3: { cellWidth: 20 } },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            rowPageBreak: 'avoid',
         });
     }
 
-
-    // Footer Page Numbers
-    const pageCount = doc.internal.pages.length - 1; // -1 because jspdf adds one empty? No, it's 1-based index?
-    // Actually doc.internal.getNumberOfPages()
-    const pageCountReal = (doc as any).internal.getNumberOfPages();
-    
-    for (let i = 1; i <= pageCountReal; i++) {
+    // ═══════════════════════════════════════════════
+    // Footer: Seitenzahlen
+    // ═══════════════════════════════════════════════
+    const totalPages = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
         doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`Seite ${i} von ${pageCountReal}`, 196, 285, { align: "right" });
+        doc.setFontSize(7);
+        doc.setTextColor(170, 170, 170);
+        doc.text(`Seite ${i} / ${totalPages}`, pageW - margin, pageH - 8, { align: "right" });
+        doc.text(project.name, margin, pageH - 8);
     }
 
-    // Save
-    doc.save(`${project.name.replace(/[^a-z0-9]/gi, '_')}_Report.pdf`);
+    doc.save(`${project.name.replace(/[^a-z0-9äöüß]/gi, '_')}_Report.pdf`);
 };
