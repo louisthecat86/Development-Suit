@@ -181,6 +181,18 @@ export function FmeaEditor({ initialData, onSave, productName, articleNumber }: 
 
     // Reconstruct decision details for CCPs that don't have them saved
     const getDetailsForCcp = (row: CcpRow): DecisionDetail[] => {
+
+  const updateComment = (ccpId: string, questionId: string, comment: string) => {
+      setFmeaDetails((prev) => {
+          const updated = { ...prev };
+          if (!updated[ccpId]) return prev;
+          updated[ccpId] = updated[ccpId].map((q) =>
+              q.id === questionId ? { ...q, comment } : q
+          );
+          return updated;
+      });
+  };
+
         if (row.decisionDetails && row.decisionDetails.length > 0) return row.decisionDetails;
         // Reconstruct from q1-q4 and DECISION_TREE
         const details: DecisionDetail[] = [];
@@ -538,6 +550,20 @@ Bitte um Prüfung und Freigabe.
                                             </TableRow>
                                         )}
                                         {ccps.map((row) => {
+    const details = getDetailsForCcp(row);
+
+  const updateComment = (ccpId: string, questionId: string, comment: string) => {
+      setFmeaDetails((prev) => {
+          const updated = { ...prev };
+          if (!updated[ccpId]) return prev;
+          updated[ccpId] = updated[ccpId].map((q) =>
+              q.id === questionId ? { ...q, comment } : q
+          );
+          return updated;
+      });
+  };
+
+
                                             const isExpanded = expandedCcpRows.has(row.id);
                                             const hasDetails = row.decisionDetails && row.decisionDetails.length > 0;
                                             return (

@@ -834,9 +834,20 @@ export default function ProductDashboard() {
       toast({ title: "Vollständiges Backup erstellt", description: "Alle Daten wurden platzsparend komprimiert." });
   };
 
-  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
+
+      const zip = await JSZip.loadAsync(file);
+
+      // Restore DeepL API Key
+      const deeplFile = zip.file("deepl-key.json");
+      if (deeplFile) {
+          const key = await deeplFile.async("string");
+          setDeepLApiKey(key.trim());
+      }
+
+
 
       const parseBool = (value: any): boolean => {
           if (typeof value === "boolean") return value;
