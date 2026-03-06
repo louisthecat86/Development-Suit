@@ -574,8 +574,74 @@ export const generateProjectPDF = (project: Project) => {
                     head: [['Schritt', 'Gefahr', 'Typ', 'Lenkungsmaßnahme']],
                     body: ccps,
                     theme: 'grid',
-                    headStyles: { fillColor: [254, 226, 226], textColor: 0 }, // Red
+                    headStyles: { fillColor: [254, 226, 226], textColor: 0 },
                     styles: { fontSize: 8 }
+                });
+
+                // @ts-ignore
+                yPos = doc.lastAutoTable.finalY + 12;
+
+                // DECISION_TREE questions for reconstructing details
+                const DECISION_TREE_PDF: Record<string, string> = {
+                    q1: "Existieren Maßnahmen zur Beherrschung der Gefahr?",
+                    modification_check: "Ist eine Beherrschung an diesem Schritt notwendig für die Sicherheit?",
+                    q2: "Ist der Schritt speziell dazu bestimmt, die Gefahr zu eliminieren oder auf ein akzeptables Maß zu reduzieren?",
+                    q3: "Könnte eine Kontamination mit der identifizierten Gefahr inakzeptable Werte erreichen?",
+                    q4: "Wird ein nachfolgender Schritt die Gefahr eliminieren oder auf ein akzeptables Maß reduzieren?"
+                };
+
+                // Entscheidungsdetails & Kommentare
+                doc.setFontSize(11);
+                doc.text("Entscheidungsdetails & Begründungen", 14, yPos);
+                yPos += 6;
+
+                project.fmeaData.ccps.forEach((ccp: any) => {
+                    if (yPos > 250) { doc.addPage(); yPos = addHeader("FMEA - Fortsetzung"); }
+
+                    doc.setFontSize(9);
+                    doc.setFont("helvetica", "bold");
+                    doc.text(`${ccp.step || "?"} → ${ccp.result}`, 14, yPos);
+                    doc.setFont("helvetica", "normal");
+                    yPos += 5;
+
+                    // Build detail rows (from saved decisionDetails or reconstructed from q1-q4)
+                    let detailRows: any[] = [];
+                    if (ccp.decisionDetails && ccp.decisionDetails.length > 0) {
+                        detailRows = ccp.decisionDetails.map((d: any) => [
+                            d.questionKey.toUpperCase(),
+                            d.questionText,
+                            d.answer ? "JA" : "NEIN",
+                            ccp.questionComments?.[d.questionKey] || ""
+                        ]);
+                    } else {
+                        // Reconstruct from q1-q4
+                        for (const qKey of ["q1", "q2", "q3", "q4"]) {
+                            if (ccp[qKey] !== null && ccp[qKey] !== undefined) {
+                                detailRows.push([
+                                    qKey.toUpperCase(),
+                                    DECISION_TREE_PDF[qKey] || qKey,
+                                    ccp[qKey] ? "JA" : "NEIN",
+                                    ccp.questionComments?.[qKey] || ""
+                                ]);
+                            }
+                        }
+                    }
+
+                    if (detailRows.length > 0) {
+                        autoTable(doc, {
+                            startY: yPos,
+                            head: [['Frage', 'Fragetext', 'Antwort', 'Begründung']],
+                            body: detailRows,
+                            theme: 'grid',
+                            headStyles: { fillColor: [219, 234, 254], textColor: 0, fontSize: 7 },
+                            styles: { fontSize: 7, cellPadding: 2 },
+                            columnStyles: { 0: { cellWidth: 12 }, 1: { cellWidth: 60 }, 2: { cellWidth: 14 } }
+                        });
+                        // @ts-ignore
+                        yPos = doc.lastAutoTable.finalY + 8;
+                    } else {
+                        yPos += 4;
+                    }
                 });
             }
         }

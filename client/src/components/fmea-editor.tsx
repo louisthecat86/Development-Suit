@@ -179,6 +179,24 @@ export function FmeaEditor({ initialData, onSave, productName, articleNumber }: 
         }));
     };
 
+    // Reconstruct decision details for CCPs that don't have them saved
+    const getDetailsForCcp = (row: CcpRow): DecisionDetail[] => {
+        if (row.decisionDetails && row.decisionDetails.length > 0) return row.decisionDetails;
+        // Reconstruct from q1-q4 and DECISION_TREE
+        const details: DecisionDetail[] = [];
+        const qKeys = ['q1', 'q2', 'q3', 'q4', 'modification_check'] as const;
+        for (const key of qKeys) {
+            const treeKey = key === 'modification_check' ? 'modification_check' : key;
+            const node = DECISION_TREE[treeKey as keyof typeof DECISION_TREE];
+            const val = key === 'modification_check' ? null : row[key as 'q1'|'q2'|'q3'|'q4'];
+            if (node && val !== null && val !== undefined) {
+                details.push({ questionKey: key, questionText: node.text, answer: val as boolean });
+            }
+        }
+        return details;
+    };
+
+
     const calculateRisk = (severity: number, occurrence: number) => {
         return severity * occurrence;
     };

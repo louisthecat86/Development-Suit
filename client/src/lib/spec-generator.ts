@@ -2,6 +2,7 @@
 import XlsxPopulate from "xlsx-populate/browser/xlsx-populate";
 import { QuidResult } from "./quid-calculator";
 import { SavedRecipe } from "./recipe-db";
+import { getData, setData } from "./electron-storage";
 
 export type SpecLanguage = "de" | "en";
 
@@ -358,12 +359,18 @@ const DEEPL_KEY_STORAGE = "quid-deepl-api-key";
 
 export function getDeepLApiKey(): string | null {
   try {
+    // Primary: electron-storage (file-backed, survives restart)
+    const stored = getData(DEEPL_KEY_STORAGE);
+    if (stored) return typeof stored === "string" ? stored : String(stored);
+    // Fallback: browser storage (dev mode)
     return sessionStorage.getItem(DEEPL_KEY_STORAGE) || localStorage.getItem(DEEPL_KEY_STORAGE);
   } catch { return null; }
 }
 
 export function setDeepLApiKey(key: string): void {
   try {
+    // Persist to disk via electron-storage (→ deepl-key.json)
+    setData(DEEPL_KEY_STORAGE, key);
     sessionStorage.setItem(DEEPL_KEY_STORAGE, key);
     localStorage.setItem(DEEPL_KEY_STORAGE, key);
   } catch { /* ignore */ }
