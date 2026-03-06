@@ -3469,15 +3469,14 @@ Bitte um Prüfung der Spezifikationen und Freigabe.
             
             {/* Restore Process Version Dialog (Punkt 5) */}
             <Dialog open={showRestoreProcessDialog} onOpenChange={setShowRestoreProcessDialog}>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-lg">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <History className="w-5 h-5 text-orange-500" />
                             Prozessparameter wiederherstellen
                         </DialogTitle>
                         <DialogDescription>
-                            Sie stellen Version {restoreProcessData?.version || "?"} als aktuelle Parameter wieder her.
-                            Dies erzeugt automatisch eine neue Version.
+                            Version <strong>{restoreProcessData?.version || "?"}</strong> wird wiederhergestellt. Es wird automatisch eine neue Version erzeugt.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
@@ -3508,8 +3507,8 @@ Bitte um Prüfung der Spezifikationen und Freigabe.
                             )}
                         </div>
                     </div>
-                    <DialogFooter className="gap-2">
-                        <Button variant="outline" onClick={() => setShowRestoreProcessDialog(false)}>
+                    <DialogFooter className="flex-col sm:flex-row gap-2">
+                        <Button variant="outline" onClick={() => setShowRestoreProcessDialog(false)} className="w-full sm:w-auto">
                             Abbrechen
                         </Button>
                         <Button
@@ -3540,8 +3539,8 @@ Bitte um Prüfung der Spezifikationen und Freigabe.
                                 });
                             }}
                         >
-                            <Save className="w-4 h-4 mr-2" />
-                            Wiederherstellen (neue Version erstellen)
+                            <Save className="w-4 h-4 mr-2 shrink-0" />
+                            Wiederherstellen
                         </Button>
                     </DialogFooter>
                 </DialogContent>
