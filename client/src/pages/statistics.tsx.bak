@@ -116,7 +116,7 @@ export default function StatisticsPage() {
 
         projects.forEach(p => {
             if (p.status === 'development' || p.status === 'production') {
-                counts[p.status]++;
+                counts[p.status as 'development' | 'production']++;
             }
         });
 

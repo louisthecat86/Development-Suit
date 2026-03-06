@@ -38,7 +38,7 @@ export function ProjectRecipeEditor({ initialRecipe, onSave, autoSave = false, r
     const { toast } = useToast();
     
     // State
-    const [ingredients, setIngredients] = useState<Ingredient[]>(initialRecipe?.ingredients || []);
+    const [ingredients, setIngredients] = useState<Ingredient[]>((initialRecipe?.ingredients || []).map(i => ({ ...i, id: i.id || crypto.randomUUID() })));
     const [cookingLoss, setCookingLoss] = useState<number>(initialRecipe?.cookingLoss || 0);
     const [fatLoss, setFatLoss] = useState<number>(initialRecipe?.fatLoss || 0);
     const [lossType, setLossType] = useState<'drying' | 'cooking' | 'none'>(initialRecipe?.lossType || 'drying');
@@ -60,7 +60,7 @@ export function ProjectRecipeEditor({ initialRecipe, onSave, autoSave = false, r
     // Reset state if initialRecipe changes (e.g. switching projects)
     useEffect(() => {
         if (initialRecipe && initialRecipe.id !== currentRecipeId) {
-            setIngredients(initialRecipe.ingredients);
+            setIngredients(initialRecipe.ingredients.map(i => ({ ...i, id: i.id || crypto.randomUUID() })));
             setCookingLoss(initialRecipe.cookingLoss);
             setFatLoss(initialRecipe.fatLoss || 0);
             setLossType(initialRecipe.lossType || 'drying');

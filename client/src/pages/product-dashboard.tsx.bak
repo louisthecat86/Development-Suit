@@ -3187,13 +3187,16 @@ Bitte um Prüfung der Spezifikationen und Freigabe.
                                                                                     />
                                                                                 </div>
                                                                             </div>
-                                                                            <DialogFooter>
-                                                                                 <Button onClick={() => {
-                                                                                     if(confirm("Diesen alten Stand als aktuelle Prozessparameter wiederherstellen?")) {
-                                                                                         handleProcessSettingsSave(settings, `Wiederhergestellt von v${version}`);
-                                                                                         toast({title: "Wiederhergestellt", description: "Prozessparameter wurden auf diesen Stand zurückgesetzt."});
-                                                                                     }
-                                                                                 }}>
+                                                                                                                                                        <DialogFooter>
+                                                                                 <Button 
+                                                                                     variant="outline"
+                                                                                     onClick={() => {
+                                                                                         setRestoreProcessData({ version, settings });
+                                                                                         setRestoreProcessComment("");
+                                                                                         setShowRestoreProcessDialog(true);
+                                                                                     }}
+                                                                                 >
+                                                                                    <History className="w-4 h-4 mr-2" />
                                                                                     Als Aktuell wiederherstellen
                                                                                  </Button>
                                                                             </DialogFooter>
@@ -3462,6 +3465,87 @@ Bitte um Prüfung der Spezifikationen und Freigabe.
                     </TabsContent>
                 </div>
             </Tabs>
+
+            
+            {/* Restore Process Version Dialog (Punkt 5) */}
+            <Dialog open={showRestoreProcessDialog} onOpenChange={setShowRestoreProcessDialog}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <History className="w-5 h-5 text-orange-500" />
+                            Prozessparameter wiederherstellen
+                        </DialogTitle>
+                        <DialogDescription>
+                            Sie stellen Version {restoreProcessData?.version || "?"} als aktuelle Parameter wieder her.
+                            Dies erzeugt automatisch eine neue Version.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="bg-amber-50 p-3 rounded-md border border-amber-200 text-sm text-amber-800">
+                            <div className="flex items-start gap-2">
+                                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                <div>
+                                    <strong>Achtung:</strong> Die aktuellen Prozessparameter werden durch den Stand
+                                    von Version {restoreProcessData?.version || "?"} ersetzt. Der aktuelle Stand bleibt
+                                    in der Historie erhalten.
+                                </div>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>
+                                Begründung für die Wiederherstellung <span className="text-red-500">*</span>
+                            </Label>
+                            <Textarea
+                                placeholder="Bitte begründen Sie, warum dieser alte Stand wiederhergestellt wird..."
+                                value={restoreProcessComment}
+                                onChange={(e) => setRestoreProcessComment(e.target.value)}
+                                className="min-h-[100px]"
+                            />
+                            {restoreProcessComment.trim().length === 0 && (
+                                <p className="text-xs text-red-500">
+                                    Ein Kommentar ist Pflicht um die Änderung nachvollziehbar zu dokumentieren.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <DialogFooter className="gap-2">
+                        <Button variant="outline" onClick={() => setShowRestoreProcessDialog(false)}>
+                            Abbrechen
+                        </Button>
+                        <Button
+                            disabled={restoreProcessComment.trim().length === 0}
+                            onClick={() => {
+                                if (!restoreProcessData || !activeProject) return;
+            
+                                const currentVersion = parseFloat(activeProject.processSettings?.version || "1.0");
+                                const newVersion = (currentVersion + 0.1).toFixed(1);
+            
+                                const restoredSettings = {
+                                    ...restoreProcessData.settings,
+                                    version: newVersion,
+                                    updatedAt: new Date().toISOString()
+                                };
+            
+                                const note = `[WIEDERHERSTELLUNG] Von v${restoreProcessData.version} wiederhergestellt → v${newVersion}. Begründung: ${restoreProcessComment.trim()}`;
+            
+                                handleProcessSettingsSave(restoredSettings, note);
+            
+                                setShowRestoreProcessDialog(false);
+                                setRestoreProcessData(null);
+                                setRestoreProcessComment("");
+            
+                                toast({
+                                    title: "Neue Version erstellt",
+                                    description: `Prozessparameter v${newVersion} wurde aus v${restoreProcessData.version} wiederhergestellt.`,
+                                });
+                            }}
+                        >
+                            <Save className="w-4 h-4 mr-2" />
+                            Wiederherstellen (neue Version erstellen)
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Label Checklist Dialog */}
             <Dialog open={showLabelChecklistDialog} onOpenChange={setShowLabelChecklistDialog}>

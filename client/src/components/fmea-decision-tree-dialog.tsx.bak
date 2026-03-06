@@ -47,7 +47,7 @@ export function FmeaDecisionTreeDialog() {
                                 <p className="text-sm text-amber-700">
                                     Das Entscheidungsbaum-Bild wurde nicht gefunden. 
                                     Bitte stellen Sie sicher, dass die Bilddatei im 
-                                    Ordner <code className="bg-amber-100 px-1 rounded">attached_assets/</code> vorhanden ist.
+                                    Ordner <code className="bg-amber-100 px-1 rounded">attached_assets/</code> vorhanden ist und die App neu gebaut wird.
                                 </p>
                             </div>
                         ) : (
