@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.quid-rechner.desktop",
     "productName": "QUID Rechner",
+    "icon": "electron/icon.ico",
     "directories": {
       "output": "release"
     },
@@ -24,9 +25,10 @@
       "dist/public/**/*"
     ],
     "win": {
+      "icon": "electron/icon.ico",
       "target": [
         {
-          "icon": "electron/icon.ico",
+          
           "target": "portable",
           "arch": [
             "x64"
